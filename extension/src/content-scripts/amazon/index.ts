@@ -42,12 +42,13 @@ async function runScan(state: AppState) {
       hasNextPage,
     });
 
-    // Advance to next page if present
+    // Advance to next page if present — delay to avoid Chrome navigation throttle
     if (hasNextPage) {
       const nextBtn = document.querySelector(
         ".a-pagination .a-last a"
       ) as HTMLAnchorElement | null;
       if (nextBtn?.href) {
+        await new Promise((resolve) => setTimeout(resolve, 1500));
         window.location.href = nextBtn.href;
       }
     }
