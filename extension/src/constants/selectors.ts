@@ -4,32 +4,24 @@
  * IMPORTANT: Amazon A/B tests their UI. When selectors break, update here.
  * Use multiple fallbacks where possible.
  *
- * Last verified: 2026-03-17
+ * Last verified: 2026-03-17 (confirmed against live Amazon order history)
  * @see https://www.amazon.com/gp/your-account/order-history
  */
 
 export const AMAZON_SELECTORS = {
   // Order history page
   orderHistory: {
-    // Container for a single order
-    orderContainer: ".order, .a-box-group.order",
-    // Order ID text - try multiple selectors
+    // Container for a single order (confirmed: .a-box-group, not .order)
+    orderContainer: ".a-box-group",
+    // Order ID text
     orderId: [
       ".yohtmlc-order-id span:last-child",
       "[data-order-id]",
-      ".order-info .a-size-mini span",
     ],
-    // Order date
-    orderDate: [
-      ".order-info .a-color-secondary",
-      ".a-col-left .a-color-secondary",
-      ".a-size-sm.a-color-secondary",
-    ],
-    // Order total
-    orderTotal: [
-      ".a-col-right .a-size-base-plus",
-      ".order-info .a-size-mini:last-child",
-    ],
+    // Labels used to find date/total via label-based lookup (see order-scanner.ts)
+    // Date and total share the same class (.aok-break-word), distinguished by label
+    metaLabel: ".a-color-secondary.a-text-caps",  // "Order placed", "Total", "Order #"
+    metaValue: ".aok-break-word",                  // the value after each label
     // Individual items within an order
     orderItem: ".a-fixed-left-grid, .yohtmlc-item",
     // Item title

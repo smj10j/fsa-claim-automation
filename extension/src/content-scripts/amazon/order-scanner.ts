@@ -20,16 +20,6 @@ function querySelector(
 }
 
 /**
- * Extracts the text content of an element, trimmed.
- */
-function getText(
-  root: Element | Document,
-  selectors: readonly string[] | string
-): string {
-  return querySelector(root, selectors)?.textContent?.trim() ?? "";
-}
-
-/**
  * Parses a price string like "$18.99" or "18.99" to cents.
  */
 export function parsePriceToCents(priceStr: string): number {
@@ -40,6 +30,40 @@ export function parsePriceToCents(priceStr: string): number {
 }
 
 /**
+ * Extracts order metadata (date, total) by finding the label span first,
+ * then reading the value from the adjacent .aok-break-word span.
+ *
+ * Amazon's order cards use a pattern like:
+ *   <span class="a-color-secondary a-text-caps">Order placed</span>
+ *   <span class="aok-break-word">March 16, 2026</span>
+ *
+ * Date and total share the same value class, distinguished by their label.
+ */
+function getMetaByLabel(
+  orderEl: Element,
+  labelText: string
+): string {
+  const labelEls = orderEl.querySelectorAll(AMAZON_SELECTORS.orderHistory.metaLabel);
+  for (const label of labelEls) {
+    if (label.textContent?.trim().toLowerCase() === labelText.toLowerCase()) {
+      // Value is typically the next .aok-break-word in the same parent container
+      const parent = label.closest(".a-column, .a-col-left, .a-col-right, div") ?? label.parentElement;
+      const value = parent?.querySelector(AMAZON_SELECTORS.orderHistory.metaValue);
+      if (value?.textContent?.trim()) {
+        return value.textContent.trim();
+      }
+      // Fallback: next element sibling
+      let next = label.nextElementSibling;
+      while (next) {
+        if (next.textContent?.trim()) return next.textContent.trim();
+        next = next.nextElementSibling;
+      }
+    }
+  }
+  return "";
+}
+
+/**
  * Extracts order items from a single order container element.
  */
 function extractOrderItems(orderEl: Element): OrderItem[] {
@@ -47,10 +71,11 @@ function extractOrderItems(orderEl: Element): OrderItem[] {
   const itemEls = orderEl.querySelectorAll(AMAZON_SELECTORS.orderHistory.orderItem);
 
   itemEls.forEach((itemEl, index) => {
-    const title = getText(itemEl, AMAZON_SELECTORS.orderHistory.itemTitle);
+    const titleEl = querySelector(itemEl, AMAZON_SELECTORS.orderHistory.itemTitle);
+    const title = titleEl?.textContent?.trim() ?? "";
     if (!title) return;
 
-    const priceText = getText(itemEl, AMAZON_SELECTORS.orderHistory.itemPrice);
+    const priceText = querySelector(itemEl, AMAZON_SELECTORS.orderHistory.itemPrice)?.textContent?.trim() ?? "";
     const price = parsePriceToCents(priceText);
 
     items.push({
@@ -59,7 +84,7 @@ function extractOrderItems(orderEl: Element): OrderItem[] {
       quantity: 1,
       unitPrice: price,
       totalPrice: price,
-      isEligible: false, // Will be set by eligibility-filter
+      isEligible: false,
     });
   });
 
@@ -82,7 +107,6 @@ function parseOrderElement(
       break;
     }
   }
-  // Try data attribute fallback
   if (!orderId) {
     orderId = orderEl.getAttribute("data-order-id") ?? "";
   }
@@ -91,11 +115,11 @@ function parseOrderElement(
     return null;
   }
 
-  // Extract order date
-  const dateText = getText(orderEl, AMAZON_SELECTORS.orderHistory.orderDate);
+  // Extract order date via label lookup
+  const dateText = getMetaByLabel(orderEl, "Order placed");
   const orderDate = parseAmazonDate(dateText);
   if (!orderDate) {
-    logger.warn("Could not parse order date:", dateText);
+    logger.warn("Could not parse order date:", dateText, "for order:", orderId);
     return null;
   }
 
@@ -104,8 +128,8 @@ function parseOrderElement(
     return null;
   }
 
-  // Extract total amount
-  const totalText = getText(orderEl, AMAZON_SELECTORS.orderHistory.orderTotal);
+  // Extract total via label lookup
+  const totalText = getMetaByLabel(orderEl, "Total");
   const totalAmount = parsePriceToCents(totalText);
 
   // Extract order details link
