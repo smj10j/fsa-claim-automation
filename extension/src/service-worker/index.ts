@@ -49,19 +49,13 @@ chrome.runtime.onInstalled.addListener((details) => {
 });
 
 // Disable navigation preload — we don't use it and it causes console spam.
-// Must be done in both install and activate: install covers the initial setup
-// window before activate fires; activate covers subsequent updates.
-function disableNavigationPreload(): Promise<void> {
-  const sw = self as unknown as ServiceWorkerGlobalScope;
-  return sw.registration?.navigationPreload?.disable() ?? Promise.resolve();
-}
-
-self.addEventListener("install", (event) => {
-  (event as ExtendableEvent).waitUntil(disableNavigationPreload());
-});
-
+// Must run in activate (not install): navigationPreload requires an active worker.
 self.addEventListener("activate", (event) => {
-  (event as ExtendableEvent).waitUntil(disableNavigationPreload());
+  const sw = self as unknown as ServiceWorkerGlobalScope;
+  const disable = sw.registration?.navigationPreload?.disable();
+  if (disable) {
+    (event as ExtendableEvent).waitUntil(disable);
+  }
 });
 
 // ─────────────────────────────────────────────
