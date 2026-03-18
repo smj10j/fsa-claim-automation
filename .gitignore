@@ -1,0 +1,29 @@
+# Dependencies
+node_modules/
+extension/node_modules/
+
+# Build output
+extension/dist/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Env files
+.env
+.env.local
+.env.*.local
+
+# Logs
+*.log
+npm-debug.log*
+
+# Chrome extension packed
+*.crx
+*.pem

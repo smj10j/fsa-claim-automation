@@ -1,0 +1,356 @@
+import { useState, useEffect } from "react";
+import type { AmazonOrder } from "@/types";
+import { useAppState } from "./hooks/useAppState";
+import { StepIndicator } from "./components/StepIndicator";
+import { OrderCard } from "./components/OrderCard";
+import { ClaimCard } from "./components/ClaimCard";
+
+function formatCents(cents: number): string {
+  return `$${(cents / 100).toFixed(2)}`;
+}
+
+export default function App() {
+  const { state, loading, sendMessage } = useAppState();
+  const [invoiceUrls, setInvoiceUrls] = useState<Record<string, string>>({});
+
+  // Load invoice data URLs for claims that need them
+  useEffect(() => {
+    const orderIds = state.claims
+      .filter((c) => c.status !== "submitted" && c.status !== "skipped")
+      .map((c) => c.sourceOrderId);
+
+    if (orderIds.length === 0) return;
+
+    void (async () => {
+      const urls: Record<string, string> = {};
+      for (const orderId of orderIds) {
+        const key = `invoice:${orderId}`;
+        const result = await chrome.storage.local.get(key);
+        if (result[key]) urls[orderId] = result[key] as string;
+      }
+      setInvoiceUrls(urls);
+    })();
+  }, [state.claims]);
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-32 text-gray-400 text-sm">
+        Loading...
+      </div>
+    );
+  }
+
+  const { currentStep } = state;
+
+  return (
+    <div className="flex flex-col">
+      {/* Header */}
+      <div className="px-4 py-3 border-b border-gray-200 flex items-center justify-between">
+        <div>
+          <h1 className="font-semibold text-sm">FSA Claim Automation</h1>
+          <div className="text-xs text-gray-500">
+            Benefit Year: {state.benefitYear.label}
+          </div>
+        </div>
+        {currentStep !== "idle" && (
+          <button
+            onClick={() => {
+              if (confirm("Reset all data and start over?")) {
+                void sendMessage({ type: "RESET_WORKFLOW" });
+              }
+            }}
+            className="text-xs text-gray-400 hover:text-red-500 transition-colors"
+          >
+            Reset
+          </button>
+        )}
+      </div>
+
+      {/* Step Indicator */}
+      {currentStep !== "idle" && (
+        <StepIndicator currentStep={currentStep} />
+      )}
+
+      {/* Error Banner */}
+      {state.lastError && (
+        <div className="mx-4 mt-3 text-xs text-red-600 bg-red-50 rounded p-2 border border-red-200">
+          ⚠ {state.lastError}
+        </div>
+      )}
+
+      {/* Step Content */}
+      <div className="flex-1 overflow-y-auto">
+        {/* IDLE */}
+        {currentStep === "idle" && (
+          <div className="p-4 space-y-4">
+            <div className="text-sm text-gray-600">
+              Scan your Amazon order history for FSA-eligible purchases, then
+              auto-submit claims to Navia Benefits.
+            </div>
+            <div className="text-xs text-gray-400">
+              Benefit Year: Jan 1 – Dec 31, {state.benefitYear.year}
+            </div>
+            {state.lastScanAt && (
+              <div className="text-xs text-gray-400">
+                Last scan:{" "}
+                {new Date(state.lastScanAt).toLocaleDateString()}
+              </div>
+            )}
+            <button
+              onClick={() =>
+                void sendMessage({ type: "START_WORKFLOW" }).then(() =>
+                  sendMessage({ type: "SCAN_ORDERS_REQUEST" })
+                )
+              }
+              className="w-full py-2.5 px-4 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 transition-colors"
+            >
+              Start Scanning Amazon
+            </button>
+          </div>
+        )}
+
+        {/* SCANNING */}
+        {(currentStep === "navigate_amazon" || currentStep === "scanning_amazon") && (
+          <div className="p-4 space-y-3">
+            <div className="text-sm font-medium">Scanning Amazon orders...</div>
+            <div className="text-xs text-gray-500">
+              Found {state.orders.length} eligible order
+              {state.orders.length !== 1 ? "s" : ""} so far
+            </div>
+            <div className="flex items-center gap-2">
+              <div className="flex-1 h-1.5 bg-gray-100 rounded-full overflow-hidden">
+                <div
+                  className="h-full bg-blue-600 rounded-full animate-pulse"
+                  style={{ width: "60%" }}
+                />
+              </div>
+              <span className="text-xs text-gray-400">Scanning...</span>
+            </div>
+            <div className="text-xs text-gray-400">
+              Please keep the Amazon tab open and do not navigate away.
+            </div>
+          </div>
+        )}
+
+        {/* REVIEW ORDERS */}
+        {currentStep === "reviewing_orders" && (
+          <ReviewOrdersStep
+            state={state}
+            onProceed={(selectedIds) => {
+              void sendMessage({ type: "SELECT_ORDERS", orderIds: selectedIds }).then(
+                () => sendMessage({ type: "CAPTURE_INVOICES_REQUEST" })
+              );
+            }}
+            onRescan={() => void sendMessage({ type: "SCAN_ORDERS_REQUEST" })}
+          />
+        )}
+
+        {/* CAPTURING INVOICES */}
+        {currentStep === "capturing_invoices" && (
+          <div className="p-4 space-y-2">
+            <div className="text-sm font-medium">Capturing receipts...</div>
+            {state.orders
+              .filter((o) => state.selectedOrderIds.includes(o.orderId))
+              .map((order) => (
+                <div
+                  key={order.orderId}
+                  className="flex items-center gap-2 text-xs py-1"
+                >
+                  <span className="w-4 flex-shrink-0">
+                    {order.invoiceStatus === "captured"
+                      ? "✓"
+                      : order.invoiceStatus === "failed"
+                      ? "✗"
+                      : "⟳"}
+                  </span>
+                  <span
+                    className={`truncate ${
+                      order.invoiceStatus === "failed"
+                        ? "text-red-500"
+                        : "text-gray-600"
+                    }`}
+                  >
+                    {order.eligibleItems[0]?.title ?? order.orderId}
+                  </span>
+                </div>
+              ))}
+          </div>
+        )}
+
+        {/* NAVIGATE NAVIA */}
+        {currentStep === "navigate_navia" && (
+          <div className="p-4 space-y-3">
+            <div className="text-sm font-medium">Ready to submit claims</div>
+            <div className="text-xs text-gray-500">
+              {state.claims.length} claim
+              {state.claims.length !== 1 ? "s" : ""} ready to submit to Navia
+              Benefits.
+            </div>
+            <div className="text-xs text-gray-500">
+              Total:{" "}
+              {formatCents(
+                state.claims.reduce((s, c) => s + c.totalAmount, 0)
+              )}
+            </div>
+            <button
+              onClick={() => void sendMessage({ type: "NAVIGATE_NAVIA" })}
+              className="w-full py-2.5 px-4 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 transition-colors"
+            >
+              Open Navia Benefits
+            </button>
+            <div className="text-xs text-gray-400">
+              Please log in to Navia if prompted, then navigate to Submit Claim.
+            </div>
+          </div>
+        )}
+
+        {/* SUBMITTING CLAIMS */}
+        {currentStep === "submitting_claims" && (
+          <div>
+            {state.claims
+              .filter(
+                (c) => c.status !== "submitted" && c.status !== "skipped"
+              )
+              .slice(0, 1)
+              .map((claim) => (
+                <ClaimCard
+                  key={claim.id}
+                  claim={claim}
+                  invoiceDataUrl={invoiceUrls[claim.sourceOrderId]}
+                  onFill={(id) =>
+                    void sendMessage({ type: "FILL_CLAIM_REQUEST", claimId: id })
+                  }
+                  onSkip={(id) =>
+                    void sendMessage({ type: "SKIP_CLAIM", claimId: id })
+                  }
+                />
+              ))}
+            <div className="px-4 pb-3 text-xs text-gray-400">
+              {state.claims.filter((c) => c.status === "submitted").length} of{" "}
+              {state.claims.length} submitted
+            </div>
+          </div>
+        )}
+
+        {/* COMPLETE */}
+        {currentStep === "complete" && (
+          <div className="p-4 space-y-3 text-center">
+            <div className="text-2xl">✓</div>
+            <div className="text-sm font-semibold">All Done!</div>
+            <div className="text-xs text-gray-500 space-y-1">
+              <div>
+                Submitted:{" "}
+                {state.claims.filter((c) => c.status === "submitted").length}{" "}
+                claims (
+                {formatCents(
+                  state.claims
+                    .filter((c) => c.status === "submitted")
+                    .reduce((s, c) => s + c.totalAmount, 0)
+                )}
+                )
+              </div>
+              {state.claims.filter((c) => c.status === "skipped").length >
+                0 && (
+                <div>
+                  Skipped:{" "}
+                  {state.claims.filter((c) => c.status === "skipped").length}{" "}
+                  claims
+                </div>
+              )}
+            </div>
+            <button
+              onClick={() => void sendMessage({ type: "RESET_WORKFLOW" })}
+              className="w-full py-2 px-4 border border-gray-300 rounded-lg text-sm hover:bg-gray-50 transition-colors"
+            >
+              Start New Session
+            </button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ─── Review Orders Step ───────────────────────────────────────────────────────
+
+interface ReviewOrdersStepProps {
+  state: ReturnType<typeof useAppState>["state"];
+  onProceed: (selectedIds: string[]) => void;
+  onRescan: () => void;
+}
+
+function ReviewOrdersStep({ state, onProceed, onRescan }: ReviewOrdersStepProps) {
+  const [selectedIds, setSelectedIds] = useState<string[]>(() =>
+    state.orders.map((o) => o.orderId)
+  );
+
+  const toggleOrder = (orderId: string) => {
+    setSelectedIds((prev) =>
+      prev.includes(orderId)
+        ? prev.filter((id) => id !== orderId)
+        : [...prev, orderId]
+    );
+  };
+
+  const selectedOrders = state.orders.filter((o: AmazonOrder) =>
+    selectedIds.includes(o.orderId)
+  );
+  const totalEligible = selectedOrders.reduce(
+    (sum: number, o: AmazonOrder) =>
+      sum + o.eligibleItems.reduce((s, item) => s + item.totalPrice, 0),
+    0
+  );
+
+  return (
+    <div className="flex flex-col">
+      <div className="px-4 py-2 border-b border-gray-100 flex items-center justify-between">
+        <div>
+          <div className="text-xs font-semibold text-gray-700">
+            {state.orders.length} eligible order
+            {state.orders.length !== 1 ? "s" : ""} found
+          </div>
+          <div className="text-xs text-gray-500">
+            Selected total: {formatCents(totalEligible)}
+          </div>
+        </div>
+        <button
+          onClick={onRescan}
+          className="text-xs text-blue-600 hover:underline"
+        >
+          Rescan
+        </button>
+      </div>
+
+      {state.orders.length === 0 ? (
+        <div className="p-4 text-center text-sm text-gray-400">
+          No FSA-eligible orders found for {state.benefitYear.label}.
+          <br />
+          <span className="text-xs">
+            Items must match FSA eligibility criteria.
+          </span>
+        </div>
+      ) : (
+        <div className="p-3 space-y-2 max-h-72 overflow-y-auto">
+          {state.orders.map((order: AmazonOrder) => (
+            <OrderCard
+              key={order.orderId}
+              order={order}
+              selected={selectedIds.includes(order.orderId)}
+              onToggle={toggleOrder}
+            />
+          ))}
+        </div>
+      )}
+
+      <div className="p-3 border-t border-gray-100">
+        <button
+          onClick={() => onProceed(selectedIds)}
+          disabled={selectedIds.length === 0}
+          className="w-full py-2.5 px-4 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 disabled:opacity-50 transition-colors"
+        >
+          Capture Receipts ({selectedIds.length})
+        </button>
+      </div>
+    </div>
+  );
+}

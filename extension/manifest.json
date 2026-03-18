@@ -1,0 +1,68 @@
+{
+  "manifest_version": 3,
+  "name": "FSA Claim Automation",
+  "version": "0.1.0",
+  "description": "Automate FSA claim submissions from Amazon purchases to Navia Benefits",
+  "permissions": [
+    "storage",
+    "scripting",
+    "tabs",
+    "activeTab"
+  ],
+  "host_permissions": [
+    "https://www.amazon.com/*",
+    "https://*.naviabenefits.com/*"
+  ],
+  "background": {
+    "service_worker": "src/service-worker/index.ts",
+    "type": "module"
+  },
+  "action": {
+    "default_popup": "src/popup/index.html",
+    "default_icon": {
+      "16": "src/assets/icons/icon-16.png",
+      "32": "src/assets/icons/icon-32.png",
+      "48": "src/assets/icons/icon-48.png",
+      "128": "src/assets/icons/icon-128.png"
+    }
+  },
+  "icons": {
+    "16": "src/assets/icons/icon-16.png",
+    "32": "src/assets/icons/icon-32.png",
+    "48": "src/assets/icons/icon-48.png",
+    "128": "src/assets/icons/icon-128.png"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://www.amazon.com/gp/your-account/order-history*",
+        "https://www.amazon.com/gp/css/order-history*"
+      ],
+      "js": ["src/content-scripts/amazon/index.ts"],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": [
+        "https://www.amazon.com/gp/your-account/order-details*",
+        "https://www.amazon.com/gp/css/summary*"
+      ],
+      "js": ["src/content-scripts/amazon/invoice-capture.ts"],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": [
+        "https://app.naviabenefits.com/*",
+        "https://*.naviabenefits.com/*"
+      ],
+      "js": ["src/content-scripts/navia/index.ts"],
+      "run_at": "document_idle",
+      "all_frames": true
+    }
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": ["src/assets/*"],
+      "matches": ["https://www.amazon.com/*", "https://*.naviabenefits.com/*"]
+    }
+  ]
+}
