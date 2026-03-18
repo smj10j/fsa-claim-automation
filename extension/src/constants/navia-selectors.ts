@@ -13,7 +13,6 @@ export const NAVIA_SELECTORS = {
   submitClaimLink: [
     "a[href*='submit-claim']",
     "a[href*='submitclaim']",
-    "button:contains('Submit Claim')",
   ],
 
   // Claim submission form fields
@@ -52,7 +51,6 @@ export const NAVIA_SELECTORS = {
     submitButton: [
       "button[type='submit']",
       "input[type='submit']",
-      "button:contains('Submit')",
     ],
   },
 } as const;
