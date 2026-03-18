@@ -31,24 +31,27 @@ export function parsePriceToCents(priceStr: string): number {
 }
 
 /**
- * Finds a meta value (date, total) by looking for its label span first.
- * Amazon structure: <span class="a-text-caps">Order placed</span>
- *                   <span class="aok-break-word">March 16, 2026</span>
+ * Finds a meta value (date, total) by matching label index to value index.
+ *
+ * Amazon's order card structure has labels and values as parallel lists:
+ *   labels[0] = "Order placed"  → values[0] = "December 26, 2025"
+ *   labels[1] = "Total"         → values[1] = "$30.28"
+ *
+ * The label and value are in separate sibling divs, so DOM traversal from
+ * the label to its value doesn't work — index-based pairing does.
  */
 function getMetaByLabel(orderEl: Element, labelText: string): string {
-  const labelEls = orderEl.querySelectorAll(AMAZON_SELECTORS.orderHistory.metaLabel);
-  for (const label of labelEls) {
-    if (label.textContent?.trim().toLowerCase() === labelText.toLowerCase()) {
-      const parent = label.closest(".a-column, .a-col-left, .a-col-right, div") ?? label.parentElement;
-      const value = parent?.querySelector(AMAZON_SELECTORS.orderHistory.metaValue);
-      if (value?.textContent?.trim()) return value.textContent.trim();
-      let next = label.nextElementSibling;
-      while (next) {
-        if (next.textContent?.trim()) return next.textContent.trim();
-        next = next.nextElementSibling;
-      }
+  const labels = Array.from(orderEl.querySelectorAll(AMAZON_SELECTORS.orderHistory.metaLabel));
+  const values = Array.from(orderEl.querySelectorAll(AMAZON_SELECTORS.orderHistory.metaValue));
+
+  for (let i = 0; i < labels.length; i++) {
+    if (labels[i]?.textContent?.trim().toLowerCase() === labelText.toLowerCase()) {
+      const val = values[i]?.textContent?.trim() ?? "";
+      D.log(`getMetaByLabel("${labelText}") → "${val}" (index ${i})`);
+      return val;
     }
   }
+  D.warn(`getMetaByLabel("${labelText}") → NOT FOUND. Labels found:`, labels.map(l => l.textContent?.trim()));
   return "";
 }
 
