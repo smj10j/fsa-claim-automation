@@ -1,29 +1,23 @@
-/**
- * Amazon content script entry point.
- *
- * Instead of waiting for a message from the service worker (which has race
- * conditions with content script initialization timing), this script:
- * 1. Checks storage on load — if currentStep is "scanning_amazon", scans immediately
- * 2. Listens to storage changes — reacts if step changes while the page is open
- *
- * This is more reliable than message-based triggering across MV3 SW restarts.
- */
-
 import type { AppState } from "@/types";
-import { getBenefitYear } from "@/lib/benefit-year";
-import { logger } from "@/lib/logger";
 import { scanCurrentPage } from "./order-scanner";
 import { captureOrderReceipt } from "./invoice-capture";
 
-logger.log("Amazon content script loaded on:", window.location.href);
+const D = {
+  log: (...a: unknown[]) => console.log("[FSA:amazon]", ...a),
+  error: (...a: unknown[]) => console.error("[FSA:amazon]", ...a),
+};
+
+D.log("Content script loaded. URL:", window.location.href);
 
 let scanInProgress = false;
 
 async function runScan(state: AppState) {
-  if (scanInProgress) return;
+  if (scanInProgress) {
+    D.log("Scan already in progress, skipping.");
+    return;
+  }
   scanInProgress = true;
-
-  logger.log("Starting order scan for benefit year:", state.benefitYear.label);
+  D.log("runScan() called. benefitYear:", state.benefitYear?.label, "currentStep:", state.currentStep);
 
   try {
     const benefitYear = {
@@ -34,67 +28,57 @@ async function runScan(state: AppState) {
 
     const { orders, hasNextPage } = scanCurrentPage(benefitYear);
 
-    logger.log(`Scan complete: ${orders.length} eligible orders, hasNextPage: ${hasNextPage}`);
+    D.log(`Sending SCAN_ORDERS_RESULT: ${orders.length} orders, hasNextPage: ${hasNextPage}`);
+    await chrome.runtime.sendMessage({ type: "SCAN_ORDERS_RESULT", orders, hasNextPage });
+    D.log("SCAN_ORDERS_RESULT sent successfully");
 
-    await chrome.runtime.sendMessage({
-      type: "SCAN_ORDERS_RESULT",
-      orders,
-      hasNextPage,
-    });
-
-    // Advance to next page if present — delay to avoid Chrome navigation throttle
     if (hasNextPage) {
-      const nextBtn = document.querySelector(
-        ".a-pagination .a-last a"
-      ) as HTMLAnchorElement | null;
+      const nextBtn = document.querySelector(".a-pagination .a-last a") as HTMLAnchorElement | null;
+      D.log("Next page button:", nextBtn?.href ?? "NOT FOUND");
       if (nextBtn?.href) {
         await new Promise((resolve) => setTimeout(resolve, 1500));
         window.location.href = nextBtn.href;
       }
     }
   } catch (err) {
-    logger.error("Scan error:", err);
-    await chrome.runtime.sendMessage({
-      type: "SCAN_ORDERS_ERROR",
-      message: String(err),
-    });
+    D.error("runScan() threw:", err);
+    try {
+      await chrome.runtime.sendMessage({ type: "SCAN_ORDERS_ERROR", message: String(err) });
+    } catch (msgErr) {
+      D.error("Also failed to send error message:", msgErr);
+    }
   } finally {
     scanInProgress = false;
   }
 }
 
 async function runCapture(orderId: string) {
+  D.log("runCapture() for orderId:", orderId);
   try {
     const dataUrl = await captureOrderReceipt();
-    await chrome.runtime.sendMessage({
-      type: "CAPTURE_INVOICE_RESULT",
-      orderId,
-      dataUrl,
-    });
+    await chrome.runtime.sendMessage({ type: "CAPTURE_INVOICE_RESULT", orderId, dataUrl });
   } catch (err) {
-    await chrome.runtime.sendMessage({
-      type: "CAPTURE_INVOICE_ERROR",
-      orderId,
-      message: String(err),
-    });
+    D.error("runCapture() threw:", err);
+    await chrome.runtime.sendMessage({ type: "CAPTURE_INVOICE_ERROR", orderId, message: String(err) });
   }
 }
 
 // ── Check state on load ───────────────────────────────────────────────────────
 chrome.storage.local.get("appState", (result) => {
   const state = result["appState"] as AppState | undefined;
+  D.log("Storage read on load. currentStep:", state?.currentStep ?? "NO STATE");
+
   if (!state) return;
 
   if (state.currentStep === "scanning_amazon") {
+    D.log("Step is scanning_amazon — triggering scan from on-load check");
     void runScan(state);
-  }
-
-  // Handle invoice capture: if we're on an order detail page
-  if (state.currentStep === "capturing_invoices") {
+  } else if (state.currentStep === "capturing_invoices") {
     const urlOrderId = extractOrderIdFromUrl(window.location.href);
-    if (urlOrderId) {
-      void runCapture(urlOrderId);
-    }
+    D.log("Step is capturing_invoices. orderId from URL:", urlOrderId);
+    if (urlOrderId) void runCapture(urlOrderId);
+  } else {
+    D.log("No action needed for step:", state.currentStep);
   }
 });
 
@@ -102,14 +86,17 @@ chrome.storage.local.get("appState", (result) => {
 chrome.storage.onChanged.addListener((changes) => {
   const newState = changes["appState"]?.newValue as AppState | undefined;
   if (!newState) return;
+  D.log("Storage changed. New step:", newState.currentStep, "scanInProgress:", scanInProgress);
 
   if (newState.currentStep === "scanning_amazon" && !scanInProgress) {
+    D.log("Step changed to scanning_amazon — triggering scan from onChanged");
     void runScan(newState);
   }
 });
 
-// ── Also accept direct messages as a fallback ─────────────────────────────────
+// ── Direct message fallback ───────────────────────────────────────────────────
 chrome.runtime.onMessage.addListener((message: { type: string; orderId?: string }, _sender, sendResponse) => {
+  D.log("Message received:", message.type);
   if (message.type === "CAPTURE_INVOICE" && message.orderId) {
     void runCapture(message.orderId).then(() => sendResponse({ ok: true }));
     return true;

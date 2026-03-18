@@ -1,12 +1,16 @@
 import { AMAZON_SELECTORS } from "@/constants/selectors";
 import { parseAmazonDate, isWithinBenefitYear, getBenefitYear } from "@/lib/benefit-year";
-import { logger } from "@/lib/logger";
 import { filterEligibleItems } from "./eligibility-filter";
 import type { AmazonOrder, OrderItem, BenefitYear } from "@/types";
 
-/**
- * Tries multiple selectors and returns the first matching element.
- */
+// Always-on debug logger for diagnosing production issues
+const D = {
+  log: (...a: unknown[]) => console.log("[FSA:scanner]", ...a),
+  warn: (...a: unknown[]) => console.warn("[FSA:scanner]", ...a),
+  group: (l: string) => console.group("[FSA:scanner] " + l),
+  groupEnd: () => console.groupEnd(),
+};
+
 function querySelector(
   root: Element | Document,
   selectors: readonly string[] | string
@@ -19,9 +23,6 @@ function querySelector(
   return null;
 }
 
-/**
- * Parses a price string like "$18.99" or "18.99" to cents.
- */
 export function parsePriceToCents(priceStr: string): number {
   const cleaned = priceStr.replace(/[^0-9.]/g, "");
   const dollars = parseFloat(cleaned);
@@ -30,29 +31,17 @@ export function parsePriceToCents(priceStr: string): number {
 }
 
 /**
- * Extracts order metadata (date, total) by finding the label span first,
- * then reading the value from the adjacent .aok-break-word span.
- *
- * Amazon's order cards use a pattern like:
- *   <span class="a-color-secondary a-text-caps">Order placed</span>
- *   <span class="aok-break-word">March 16, 2026</span>
- *
- * Date and total share the same value class, distinguished by their label.
+ * Finds a meta value (date, total) by looking for its label span first.
+ * Amazon structure: <span class="a-text-caps">Order placed</span>
+ *                   <span class="aok-break-word">March 16, 2026</span>
  */
-function getMetaByLabel(
-  orderEl: Element,
-  labelText: string
-): string {
+function getMetaByLabel(orderEl: Element, labelText: string): string {
   const labelEls = orderEl.querySelectorAll(AMAZON_SELECTORS.orderHistory.metaLabel);
   for (const label of labelEls) {
     if (label.textContent?.trim().toLowerCase() === labelText.toLowerCase()) {
-      // Value is typically the next .aok-break-word in the same parent container
       const parent = label.closest(".a-column, .a-col-left, .a-col-right, div") ?? label.parentElement;
       const value = parent?.querySelector(AMAZON_SELECTORS.orderHistory.metaValue);
-      if (value?.textContent?.trim()) {
-        return value.textContent.trim();
-      }
-      // Fallback: next element sibling
+      if (value?.textContent?.trim()) return value.textContent.trim();
       let next = label.nextElementSibling;
       while (next) {
         if (next.textContent?.trim()) return next.textContent.trim();
@@ -63,9 +52,6 @@ function getMetaByLabel(
   return "";
 }
 
-/**
- * Extracts order items from a single order container element.
- */
 function extractOrderItems(orderEl: Element): OrderItem[] {
   const items: OrderItem[] = [];
   const itemEls = orderEl.querySelectorAll(AMAZON_SELECTORS.orderHistory.orderItem);
@@ -74,119 +60,84 @@ function extractOrderItems(orderEl: Element): OrderItem[] {
     const titleEl = querySelector(itemEl, AMAZON_SELECTORS.orderHistory.itemTitle);
     const title = titleEl?.textContent?.trim() ?? "";
     if (!title) return;
-
     const priceText = querySelector(itemEl, AMAZON_SELECTORS.orderHistory.itemPrice)?.textContent?.trim() ?? "";
     const price = parsePriceToCents(priceText);
-
-    items.push({
-      id: `item-${index}`,
-      title,
-      quantity: 1,
-      unitPrice: price,
-      totalPrice: price,
-      isEligible: false,
-    });
+    items.push({ id: `item-${index}`, title, quantity: 1, unitPrice: price, totalPrice: price, isEligible: false });
   });
 
   return items;
 }
 
-/**
- * Parses a single order card element into an AmazonOrder.
- */
-function parseOrderElement(
-  orderEl: Element,
-  benefitYear: BenefitYear
-): AmazonOrder | null {
-  // Extract order ID
+function parseOrderElement(orderEl: Element, benefitYear: BenefitYear): AmazonOrder | null {
+  // --- Order ID ---
   let orderId = "";
   for (const sel of AMAZON_SELECTORS.orderHistory.orderId) {
     const el = orderEl.querySelector(sel);
-    if (el?.textContent?.trim()) {
-      orderId = el.textContent.trim();
-      break;
-    }
+    if (el?.textContent?.trim()) { orderId = el.textContent.trim(); break; }
   }
+  if (!orderId) orderId = orderEl.getAttribute("data-order-id") ?? "";
   if (!orderId) {
-    orderId = orderEl.getAttribute("data-order-id") ?? "";
-  }
-  if (!orderId) {
-    logger.warn("Could not extract order ID from element:", orderEl);
+    D.warn("SKIP: no order ID found. First 200 chars of element:", orderEl.textContent?.substring(0, 200));
     return null;
   }
 
-  // Extract order date via label lookup
+  // --- Date ---
   const dateText = getMetaByLabel(orderEl, "Order placed");
+  D.log(`[${orderId}] raw date text: "${dateText}"`);
   const orderDate = parseAmazonDate(dateText);
   if (!orderDate) {
-    logger.warn("Could not parse order date:", dateText, "for order:", orderId);
+    D.warn(`[${orderId}] SKIP: could not parse date from "${dateText}"`);
     return null;
   }
 
-  // Filter by benefit year
-  if (!isWithinBenefitYear(orderDate, benefitYear)) {
+  // --- Benefit year filter ---
+  const inRange = isWithinBenefitYear(orderDate, benefitYear);
+  D.log(`[${orderId}] date: ${orderDate.toISOString()}, benefitYear: ${benefitYear.year}, inRange: ${inRange}`);
+  if (!inRange) return null;
+
+  // --- Items ---
+  const rawItems = extractOrderItems(orderEl);
+  D.log(`[${orderId}] found ${rawItems.length} items:`, rawItems.map(i => i.title));
+
+  const { allItems, eligibleItems } = filterEligibleItems(rawItems);
+  D.log(`[${orderId}] eligible items (${eligibleItems.length}):`, eligibleItems.map(i => `${i.title} [${i.eligibilityReason}]`));
+
+  if (eligibleItems.length === 0) {
+    D.log(`[${orderId}] SKIP: no eligible items`);
     return null;
   }
 
-  // Extract total via label lookup
   const totalText = getMetaByLabel(orderEl, "Total");
   const totalAmount = parsePriceToCents(totalText);
+  const detailsLink = querySelector(orderEl, AMAZON_SELECTORS.orderHistory.orderDetailsLink);
+  const orderDetailUrl = detailsLink ? `https://www.amazon.com${detailsLink.getAttribute("href") ?? ""}` : "";
 
-  // Extract order details link
-  const detailsLink = querySelector(
-    orderEl,
-    AMAZON_SELECTORS.orderHistory.orderDetailsLink
-  );
-  const orderDetailUrl = detailsLink
-    ? `https://www.amazon.com${detailsLink.getAttribute("href") ?? ""}`
-    : "";
-
-  // Extract and filter items
-  const rawItems = extractOrderItems(orderEl);
-  const { allItems, eligibleItems } = filterEligibleItems(rawItems);
-
-  // Only return orders with at least one eligible item
-  if (eligibleItems.length === 0) return null;
-
-  return {
-    orderId,
-    orderDate,
-    totalAmount,
-    items: allItems,
-    eligibleItems,
-    invoiceStatus: "pending",
-    orderDetailUrl,
-  };
+  return { orderId, orderDate, totalAmount, items: allItems, eligibleItems, invoiceStatus: "pending", orderDetailUrl };
 }
 
-/**
- * Scans the current Amazon order history page.
- * Returns found orders and whether there's a next page.
- */
-export function scanCurrentPage(benefitYear?: BenefitYear): {
-  orders: AmazonOrder[];
-  hasNextPage: boolean;
-} {
+export function scanCurrentPage(benefitYear?: BenefitYear): { orders: AmazonOrder[]; hasNextPage: boolean } {
   const year = benefitYear ?? getBenefitYear();
-  const orderEls = document.querySelectorAll(
-    AMAZON_SELECTORS.orderHistory.orderContainer
-  );
+  D.log(`scanCurrentPage() — url: ${window.location.href}`);
+  D.log(`Benefit year: ${year.year} (${year.start.toISOString()} → ${year.end.toISOString()})`);
 
-  logger.log(`Found ${orderEls.length} order elements on page`);
+  const orderEls = document.querySelectorAll(AMAZON_SELECTORS.orderHistory.orderContainer);
+  D.log(`Order container selector "${AMAZON_SELECTORS.orderHistory.orderContainer}" matched ${orderEls.length} elements`);
+
+  if (orderEls.length === 0) {
+    D.warn("No order elements found! The page may have a different structure. Body excerpt:", document.body.innerHTML.substring(0, 500));
+  }
 
   const orders: AmazonOrder[] = [];
-  orderEls.forEach((el) => {
+  D.group(`Parsing ${orderEls.length} order elements`);
+  orderEls.forEach((el, i) => {
+    D.log(`--- Element ${i} ---`);
     const order = parseOrderElement(el, year);
     if (order) orders.push(order);
   });
+  D.groupEnd();
 
-  const nextPageEl = document.querySelector(
-    AMAZON_SELECTORS.orderHistory.paginationNext
-  );
-
-  logger.log(
-    `Parsed ${orders.length} eligible orders, hasNextPage: ${!!nextPageEl}`
-  );
+  const nextPageEl = document.querySelector(AMAZON_SELECTORS.orderHistory.paginationNext);
+  D.log(`Result: ${orders.length} eligible orders, hasNextPage: ${!!nextPageEl}`);
 
   return { orders, hasNextPage: !!nextPageEl };
 }

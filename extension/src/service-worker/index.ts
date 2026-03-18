@@ -24,6 +24,12 @@ import { sendToTab } from "@/lib/messaging";
 import { logger } from "@/lib/logger";
 import { openAmazonOrderHistory, openNaviaPortal } from "./tab-coordinator";
 
+// Always-on logger for the service worker console
+const SW = {
+  log: (...a: unknown[]) => console.log("[FSA:sw]", ...a),
+  error: (...a: unknown[]) => console.error("[FSA:sw]", ...a),
+};
+
 // Keep track of active tab IDs in memory (OK to lose on SW restart - recoverable)
 let amazonTabId: number | undefined;
 let naviaTabId: number | undefined;
@@ -65,7 +71,7 @@ async function handleMessage(
   message: IncomingMessage,
   _sender: chrome.runtime.MessageSender
 ): Promise<unknown> {
-  logger.log("SW received:", message.type);
+  SW.log("Message received:", message.type);
 
   switch (message.type) {
     // ── Popup messages ──────────────────────────────────────
@@ -160,12 +166,12 @@ async function handleMessage(
 
     // ── Amazon content script messages ──────────────────────
     case "SCAN_ORDERS_RESULT": {
+      SW.log(`SCAN_ORDERS_RESULT: ${message.orders.length} orders, hasNextPage: ${message.hasNextPage}`);
       const scanState = await readAppState();
       const existingIds = new Set(scanState.orders.map((o) => o.orderId));
-      const newOrders = message.orders.filter(
-        (o) => !existingIds.has(o.orderId)
-      );
+      const newOrders = message.orders.filter((o) => !existingIds.has(o.orderId));
       const allOrders = [...scanState.orders, ...newOrders];
+      SW.log(`Total orders accumulated: ${allOrders.length} (${newOrders.length} new)`);
 
       await updateAppState({
         orders: allOrders,
@@ -176,10 +182,8 @@ async function handleMessage(
     }
 
     case "SCAN_ORDERS_ERROR": {
-      await updateAppState({
-        currentStep: "reviewing_orders",
-        lastError: message.message,
-      });
+      SW.error("SCAN_ORDERS_ERROR:", message.message);
+      await updateAppState({ currentStep: "reviewing_orders", lastError: message.message });
       return { ok: true };
     }
 
