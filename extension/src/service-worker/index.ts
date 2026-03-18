@@ -75,16 +75,12 @@ async function handleMessage(
     }
 
     case "SCAN_ORDERS_REQUEST": {
+      // Set state to scanning_amazon FIRST — the content script watches storage
+      // and will auto-trigger the scan when it sees this step.
       await updateAppState({ currentStep: "scanning_amazon" });
+      // Open/focus the Amazon tab. The content script reads state on load
+      // via chrome.storage.onChanged, so no direct message needed.
       amazonTabId = await openAmazonOrderHistory();
-      // Content script will receive SCAN_ORDERS message via storage state change
-      // or we can send it directly:
-      const state = await readAppState();
-      await sendToTab(amazonTabId, {
-        type: "SCAN_ORDERS",
-        benefitYearStart: state.benefitYear.start.toISOString(),
-        benefitYearEnd: state.benefitYear.end.toISOString(),
-      });
       return { ok: true };
     }
 
