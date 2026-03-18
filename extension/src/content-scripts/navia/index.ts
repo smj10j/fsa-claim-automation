@@ -56,6 +56,10 @@ async function handleMessage(message: SWToNaviaMessage): Promise<unknown> {
     case "FILL_CLAIM": {
       const { claim } = message;
 
+      // Always dump DOM at fill time so we see current form state
+      logger.log("[FSA:navia:discover] === DOM at fill time ===");
+      discoverFormFields();
+
       try {
         await fillClaimForm(claim);
 

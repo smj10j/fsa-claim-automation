@@ -135,8 +135,13 @@ export async function fillClaimForm(claim: Claim): Promise<void> {
   const firstItem = claim.items[0];
   if (!firstItem) throw new Error("Claim has no items");
 
-  // Wait for the form to appear (handles SPA navigation)
-  await waitForElement(NAVIA_SELECTORS.form.submitButton);
+  // Wait briefly for the form to appear, but don't crash if selectors aren't found yet.
+  // The real selectors need to be confirmed against the live Navia form.
+  try {
+    await waitForElement(NAVIA_SELECTORS.form.submitButton, 3000);
+  } catch {
+    logger.warn("Submit button not found — form may use different selectors. Proceeding anyway.");
+  }
   await delay(300); // Extra buffer for React rendering
 
   // 1. Expense type dropdown
