@@ -10,9 +10,35 @@ import { observeNavigation } from "./form-observer";
 
 logger.log("Navia content script loaded on:", window.location.href);
 
+// ── DOM discovery: log all form fields so we can identify real selectors ──────
+function discoverFormFields(): void {
+  const inputs = Array.from(document.querySelectorAll("input, select, textarea, button"));
+  if (inputs.length === 0) {
+    logger.log("[FSA:navia:discover] No form fields found yet (page may still be loading)");
+    return;
+  }
+  logger.log(`[FSA:navia:discover] Found ${inputs.length} interactive elements:`);
+  inputs.forEach((el, i) => {
+    const e = el as HTMLInputElement;
+    logger.log(
+      `  [${i}] <${el.tagName.toLowerCase()}> ` +
+      `type=${e.type ?? "—"} ` +
+      `name="${e.name ?? ""}" ` +
+      `id="${e.id ?? ""}" ` +
+      `placeholder="${e.placeholder ?? ""}" ` +
+      `class="${el.className.slice(0, 60)}"` +
+      (el.tagName === "BUTTON" ? ` text="${el.textContent?.trim().slice(0, 40)}"` : "")
+    );
+  });
+}
+
+// Run discovery on load and after SPA navigations
+setTimeout(discoverFormFields, 1500);
+
 // Observe SPA navigation so we can re-attach listeners after page transitions
 observeNavigation((url) => {
   logger.log("Navia SPA navigated to:", url);
+  setTimeout(discoverFormFields, 1500);
 });
 
 chrome.runtime.onMessage.addListener(

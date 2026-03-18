@@ -151,9 +151,13 @@ async function handleMessage(
       if (!claim) {
         return { error: `Claim ${message.claimId} not found` };
       }
-      if (!naviaTabId) {
-        naviaTabId = await openNaviaPortal();
+      // Always find the current Navia tab by URL — naviaTabId is in-memory and
+      // lost on SW restarts. Finding the live tab is more reliable.
+      const naviaTab = await findNaviaTab();
+      if (!naviaTab) {
+        return { error: "No Navia tab found. Please open Navia Benefits and navigate to the Submit Claim page." };
       }
+      naviaTabId = naviaTab;
       await sendToTab(naviaTabId, { type: "FILL_CLAIM", claim });
       return { ok: true };
     }
@@ -344,6 +348,21 @@ async function buildClaimsFromOrders(orders: AmazonOrder[]): Promise<Claim[]> {
  * Navigates the Amazon tab to the printable invoice page for a given order.
  * invoice-capture.ts is injected on this URL and auto-captures on load.
  */
+/**
+ * Finds any open Navia Benefits tab by URL pattern.
+ * More reliable than the in-memory naviaTabId which is lost on SW restarts.
+ */
+async function findNaviaTab(): Promise<number | undefined> {
+  const tabs = await chrome.tabs.query({ url: "https://*.naviabenefits.com/*" });
+  const tab = tabs[0];
+  if (tab?.id) {
+    SW.log("Found Navia tab:", tab.id, tab.url);
+    return tab.id;
+  }
+  SW.log("No Navia tab found");
+  return undefined;
+}
+
 async function navigateToInvoice(tabId: number, orderId: string): Promise<void> {
   const url = `https://www.amazon.com/gp/css/summary/print.html?orderID=${orderId}`;
   SW.log(`Navigating to invoice: ${url}`);
