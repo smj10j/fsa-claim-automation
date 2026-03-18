@@ -43,9 +43,11 @@ let naviaTabId: number | undefined;
 
 chrome.runtime.onInstalled.addListener((details) => {
   SW.log("Extension installed/updated. Reason:", details.reason);
-  // Reset state to idle on every install/reload so stale scan state doesn't persist
-  // across extension reloads during development (and clean updates in production).
-  void clearAllData().then(() => SW.log("State cleared on install/update"));
+  // Only clear state on a fresh install, not on extension reloads/updates.
+  // Use the Reset button in the popup to clear manually during development.
+  if (details.reason === "install") {
+    void clearAllData().then(() => SW.log("State cleared on fresh install"));
+  }
 });
 
 // Disable navigation preload — we don't use it and it causes console spam.
