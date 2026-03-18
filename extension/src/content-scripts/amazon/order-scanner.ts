@@ -140,7 +140,26 @@ export function scanCurrentPage(benefitYear?: BenefitYear): { orders: AmazonOrde
   D.groupEnd();
 
   const nextPageEl = document.querySelector(AMAZON_SELECTORS.orderHistory.paginationNext);
-  D.log(`Result: ${orders.length} eligible orders, hasNextPage: ${!!nextPageEl}`);
+
+  // ── Per-page summary ─────────────────────────────────────────────────────
+  D.log(`━━━ PAGE SUMMARY ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`);
+  D.log(`  Orders on page:   ${orderEls.length}`);
+  D.log(`  FSA eligible:     ${orders.length}`);
+  D.log(`  Has next page:    ${!!nextPageEl}`);
+  if (orders.length > 0) {
+    D.log(`  ── Eligible orders ──`);
+    for (const order of orders) {
+      const date = order.orderDate instanceof Date
+        ? order.orderDate.toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" })
+        : String(order.orderDate);
+      const total = `$${(order.eligibleItems.reduce((s, i) => s + i.totalPrice, 0) / 100).toFixed(2)}`;
+      D.log(`  [${date}] ${total} — Order ${order.orderId}`);
+      for (const item of order.eligibleItems) {
+        D.log(`    • ${item.title} ($${(item.totalPrice / 100).toFixed(2)}) [${item.eligibilityReason ?? "eligible"}]`);
+      }
+    }
+  }
+  D.log(`━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`);
 
   return { orders, hasNextPage: !!nextPageEl };
 }

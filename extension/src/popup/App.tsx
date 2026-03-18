@@ -336,8 +336,7 @@ function ReviewOrdersStep({ state, onProceed, onRescan }: ReviewOrdersStepProps)
     selectedIds.includes(o.orderId)
   );
   const totalEligible = selectedOrders.reduce(
-    (sum: number, o: AmazonOrder) =>
-      sum + o.eligibleItems.reduce((s, item) => s + item.totalPrice, 0),
+    (sum: number, o: AmazonOrder) => sum + o.totalAmount,
     0
   );
 

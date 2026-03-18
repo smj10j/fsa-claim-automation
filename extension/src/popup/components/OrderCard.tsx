@@ -16,10 +16,9 @@ function formatDate(date: Date | string): string {
 }
 
 export function OrderCard({ order, selected, onToggle }: Props) {
-  const eligibleTotal = order.eligibleItems.reduce(
-    (sum, item) => sum + item.totalPrice,
-    0
-  );
+  // Per-item prices are not available on Amazon's order history page;
+  // use the order's total amount (correctly parsed from the "Total" label).
+  const eligibleTotal = order.totalAmount;
 
   return (
     <div

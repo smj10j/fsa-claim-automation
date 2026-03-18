@@ -13,13 +13,16 @@ import type {
   AmazonToSWMessage,
   NaviaToSWMessage,
 } from "@/types";
+import type { Claim, ClaimItem, AmazonOrder } from "@/types";
 import {
   readAppState,
   updateAppState,
   writeInvoice,
+  readInvoice,
   clearAllData,
 } from "@/lib/storage";
 import { getBenefitYear } from "@/lib/benefit-year";
+import { checkEligibility, getNaviaExpenseType } from "@/lib/eligibility";
 import { sendToTab } from "@/lib/messaging";
 import { logger } from "@/lib/logger";
 import { openAmazonOrderHistory, openNaviaPortal } from "./tab-coordinator";
@@ -92,12 +95,13 @@ async function handleMessage(
     }
 
     case "SCAN_ORDERS_REQUEST": {
-      // Set state to scanning_amazon FIRST — the content script watches storage
-      // and will auto-trigger the scan when it sees this step.
+      // Set state to scanning_amazon FIRST so the content script sees it on load.
       await updateAppState({ currentStep: "scanning_amazon" });
-      // Open/focus the Amazon tab. The content script reads state on load
-      // via chrome.storage.onChanged, so no direct message needed.
-      amazonTabId = await openAmazonOrderHistory();
+      // Navigate the Amazon tab to the year-filtered URL. Navigating forces a
+      // fresh page load → content script runs fresh → reads scanning_amazon →
+      // triggers scan immediately. Also scopes results to the correct benefit year.
+      const scanState = await readAppState();
+      amazonTabId = await openAmazonOrderHistory(scanState.benefitYear?.year);
       return { ok: true };
     }
 
@@ -119,7 +123,8 @@ async function handleMessage(
       // Content scripts will send CAPTURE_INVOICE_RESULT back
       for (const order of selectedOrders) {
         if (!amazonTabId) {
-          amazonTabId = await openAmazonOrderHistory();
+          // Recover tab ID without navigating away (invoice capture needs the tab as-is)
+          amazonTabId = await openAmazonOrderHistory(captureState.benefitYear?.year);
         }
         await sendToTab(amazonTabId, {
           type: "CAPTURE_INVOICE",
@@ -199,14 +204,21 @@ async function handleMessage(
           ? { ...o, invoiceStatus: "captured" as const }
           : o
       );
-      const allCaptured = orders
-        .filter((o) => captureResultState.selectedOrderIds.includes(o.orderId))
-        .every((o) => o.invoiceStatus === "captured");
+      const selectedOrders = orders.filter((o) =>
+        captureResultState.selectedOrderIds.includes(o.orderId)
+      );
+      const allCaptured = selectedOrders.every(
+        (o) => o.invoiceStatus === "captured"
+      );
 
-      await updateAppState({
-        orders,
-        currentStep: allCaptured ? "navigate_navia" : "capturing_invoices",
-      });
+      if (allCaptured) {
+        // Build Claim objects from captured orders
+        const claims = await buildClaimsFromOrders(selectedOrders);
+        SW.log(`Built ${claims.length} claims from ${selectedOrders.length} orders`);
+        await updateAppState({ orders, claims, currentStep: "navigate_navia" });
+      } else {
+        await updateAppState({ orders, currentStep: "capturing_invoices" });
+      }
       return { ok: true };
     }
 
@@ -263,4 +275,53 @@ async function handleMessage(
       logger.warn("Unknown message type:", (message as { type: string }).type);
       return { error: "Unknown message type" };
   }
+}
+
+// ─────────────────────────────────────────────
+// Helpers
+// ─────────────────────────────────────────────
+
+/**
+ * Builds Claim objects from captured Amazon orders.
+ * One claim per order. Amount = order.totalAmount (per-item prices are not
+ * available on the order history page; the order total is correct).
+ */
+async function buildClaimsFromOrders(orders: AmazonOrder[]): Promise<Claim[]> {
+  const claims: Claim[] = [];
+
+  for (const order of orders) {
+    const invoiceDataUrl = (await readInvoice(order.orderId)) ?? "";
+
+    // Determine expense type from the first eligible item
+    const firstEligible = order.eligibleItems[0];
+    const eligibility = firstEligible
+      ? checkEligibility(firstEligible.title)
+      : null;
+    const expenseType = eligibility?.category
+      ? getNaviaExpenseType(eligibility.category)
+      : "OTC";
+
+    const description = order.eligibleItems
+      .map((i) => i.title)
+      .join("; ");
+
+    const claimItem: ClaimItem = {
+      description,
+      serviceDate: order.orderDate,
+      amount: order.totalAmount,
+      expenseType,
+    };
+
+    claims.push({
+      id: `claim-${order.orderId}`,
+      sourceOrderId: order.orderId,
+      items: [claimItem],
+      totalAmount: order.totalAmount,
+      invoiceDataUrl,
+      status: "draft",
+      createdAt: new Date(),
+    });
+  }
+
+  return claims;
 }
