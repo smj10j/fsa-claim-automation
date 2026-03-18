@@ -73,8 +73,14 @@ export default function App() {
 
       {/* Error Banner */}
       {state.lastError && (
-        <div className="mx-4 mt-3 text-xs text-red-600 bg-red-50 rounded p-2 border border-red-200">
-          ⚠ {state.lastError}
+        <div className="mx-4 mt-3 text-xs text-red-600 bg-red-50 rounded p-2 border border-red-200 flex items-start justify-between gap-2">
+          <span>⚠ {state.lastError}</span>
+          <button
+            onClick={() => void sendMessage({ type: "RESET_WORKFLOW" })}
+            className="flex-shrink-0 underline hover:no-underline"
+          >
+            Reset
+          </button>
         </div>
       )}
 
@@ -288,11 +294,12 @@ function IdleStep({ state, sendMessage }: IdleStepProps) {
         </select>
       </div>
 
-      {state.lastScanAt && (
-        <div className="text-xs text-gray-400">
-          Last scan: {new Date(state.lastScanAt).toLocaleDateString()}
-        </div>
-      )}
+      {state.lastScanAt && (() => {
+        const d = new Date(state.lastScanAt);
+        return !isNaN(d.getTime()) ? (
+          <div className="text-xs text-gray-400">Last scan: {d.toLocaleDateString()}</div>
+        ) : null;
+      })()}
 
       <button
         onClick={startScan}
