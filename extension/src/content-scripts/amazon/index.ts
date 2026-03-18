@@ -1,4 +1,5 @@
 import type { AppState } from "@/types";
+import { getBenefitYear } from "@/lib/benefit-year";
 import { scanCurrentPage } from "./order-scanner";
 import { captureOrderReceipt } from "./invoice-capture";
 
@@ -20,11 +21,11 @@ async function runScan(state: AppState) {
   D.log("runScan() called. benefitYear:", state.benefitYear?.label, "currentStep:", state.currentStep);
 
   try {
-    const benefitYear = {
-      ...state.benefitYear,
-      start: new Date(state.benefitYear.start),
-      end: new Date(state.benefitYear.end),
-    };
+    // Rebuild benefit year from the stored year number — avoids Date serialization issues.
+    // chrome.storage.local serializes Date objects to ISO strings which may not round-trip
+    // cleanly depending on timezone. The year number is always safe.
+    const benefitYear = getBenefitYear(state.benefitYear?.year);
+    D.log("Benefit year reconstructed:", benefitYear.year, benefitYear.start.toISOString(), "→", benefitYear.end.toISOString());
 
     const { orders, hasNextPage } = scanCurrentPage(benefitYear);
 
