@@ -11,13 +11,19 @@ const D = {
 D.log("Content script loaded. URL:", window.location.href);
 
 let scanInProgress = false;
+let scannedUrl = ""; // prevent re-scanning the same page on repeated storage changes
 
 async function runScan(state: AppState) {
   if (scanInProgress) {
     D.log("Scan already in progress, skipping.");
     return;
   }
+  if (scannedUrl === window.location.href) {
+    D.log("Already scanned this URL, skipping:", scannedUrl);
+    return;
+  }
   scanInProgress = true;
+  scannedUrl = window.location.href;
   D.log("runScan() called. benefitYear:", state.benefitYear?.label, "currentStep:", state.currentStep);
 
   try {

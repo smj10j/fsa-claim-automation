@@ -82,31 +82,7 @@ export default function App() {
       <div className="flex-1 overflow-y-auto">
         {/* IDLE */}
         {currentStep === "idle" && (
-          <div className="p-4 space-y-4">
-            <div className="text-sm text-gray-600">
-              Scan your Amazon order history for FSA-eligible purchases, then
-              auto-submit claims to Navia Benefits.
-            </div>
-            <div className="text-xs text-gray-400">
-              Benefit Year: Jan 1 – Dec 31, {state.benefitYear.year}
-            </div>
-            {state.lastScanAt && (
-              <div className="text-xs text-gray-400">
-                Last scan:{" "}
-                {new Date(state.lastScanAt).toLocaleDateString()}
-              </div>
-            )}
-            <button
-              onClick={() =>
-                void sendMessage({ type: "START_WORKFLOW" }).then(() =>
-                  sendMessage({ type: "SCAN_ORDERS_REQUEST" })
-                )
-              }
-              className="w-full py-2.5 px-4 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 transition-colors"
-            >
-              Start Scanning Amazon
-            </button>
-          </div>
+          <IdleStep state={state} sendMessage={sendMessage} />
         )}
 
         {/* SCANNING */}
@@ -267,6 +243,63 @@ export default function App() {
           </div>
         )}
       </div>
+    </div>
+  );
+}
+
+// ─── Idle Step ────────────────────────────────────────────────────────────────
+
+interface IdleStepProps {
+  state: ReturnType<typeof useAppState>["state"];
+  sendMessage: ReturnType<typeof useAppState>["sendMessage"];
+}
+
+function IdleStep({ state, sendMessage }: IdleStepProps) {
+  const currentYear = new Date().getFullYear();
+  const [selectedYear, setSelectedYear] = useState(currentYear);
+  // Offer the current year and the two prior years
+  const yearOptions = [currentYear, currentYear - 1, currentYear - 2];
+
+  const startScan = () => {
+    void sendMessage({ type: "START_WORKFLOW", benefitYear: selectedYear }).then(() =>
+      sendMessage({ type: "SCAN_ORDERS_REQUEST" })
+    );
+  };
+
+  return (
+    <div className="p-4 space-y-4">
+      <div className="text-sm text-gray-600">
+        Scan your Amazon order history for FSA-eligible purchases, then
+        auto-submit claims to Navia Benefits.
+      </div>
+
+      <div className="space-y-1">
+        <label className="text-xs font-medium text-gray-600">Benefit Year</label>
+        <select
+          value={selectedYear}
+          onChange={(e) => setSelectedYear(Number(e.target.value))}
+          className="w-full border border-gray-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+        >
+          {yearOptions.map((y) => (
+            <option key={y} value={y}>
+              {y} (Jan 1 – Dec 31, {y})
+            </option>
+          ))}
+        </select>
+      </div>
+
+      {state.lastScanAt && (
+        <div className="text-xs text-gray-400">
+          Last scan: {new Date(state.lastScanAt).toLocaleDateString()}
+        </div>
+      )}
+
+      <button
+        onClick={startScan}
+        className="w-full py-2.5 px-4 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 transition-colors"
+      >
+        Scan {selectedYear} Orders
+      </button>
     </div>
   );
 }
