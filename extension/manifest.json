@@ -35,6 +35,7 @@
   "content_scripts": [
     {
       "matches": [
+        "https://www.amazon.com/your-orders/orders*",
         "https://www.amazon.com/gp/your-account/order-history*",
         "https://www.amazon.com/gp/css/order-history*"
       ],

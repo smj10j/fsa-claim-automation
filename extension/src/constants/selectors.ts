@@ -5,7 +5,7 @@
  * Use multiple fallbacks where possible.
  *
  * Last verified: 2026-03-17 (confirmed against live Amazon order history)
- * @see https://www.amazon.com/gp/your-account/order-history
+ * @see https://www.amazon.com/your-orders/orders (new URL as of 2026)
  */
 
 export const AMAZON_SELECTORS = {

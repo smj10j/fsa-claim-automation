@@ -1,8 +1,7 @@
 import { openOrFocusTab, waitForTabLoad } from "@/lib/messaging";
 import { logger } from "@/lib/logger";
 
-const AMAZON_ORDER_HISTORY_URL =
-  "https://www.amazon.com/gp/your-account/order-history";
+const AMAZON_ORDER_HISTORY_URL = "https://www.amazon.com/your-orders/orders";
 const NAVIA_PORTAL_URL = "https://app.naviabenefits.com/";
 
 /**
