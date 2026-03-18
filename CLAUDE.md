@@ -16,7 +16,7 @@ For every task/feature implementation, follow these steps in order:
 6. **Validate** - Verify the feature works end-to-end in Chrome with the built extension
 7. **Update TODO** - Mark any remaining items complete, note any follow-up work
 8. **Update docs** - Keep PRD.md, TDD.md, README.md, and relevant docs current
-9. **Commit & push** - Meaningful commit messages following conventional commits format
+9. **Commit & push** - Only after the change is confirmed working. Skip the commit when iterating on bugs or uncertain fixes — batch related fixes into one commit once validated.
 
 ## Key Decisions
 

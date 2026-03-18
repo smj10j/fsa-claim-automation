@@ -17,6 +17,7 @@ export type AppState = {
   orders: AmazonOrder[];
   selectedOrderIds: string[];
   claims: Claim[];
+  exportFolderName?: string; // Defaults to "yyyy-mm-dd" of capture date if not set
   lastError?: string;
   lastScanAt?: string; // ISO string (Date not JSON-serializable)
 };

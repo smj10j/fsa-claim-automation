@@ -118,10 +118,12 @@ export default function App() {
         {currentStep === "reviewing_orders" && (
           <ReviewOrdersStep
             state={state}
-            onProceed={(selectedIds) => {
-              void sendMessage({ type: "SELECT_ORDERS", orderIds: selectedIds }).then(
-                () => sendMessage({ type: "CAPTURE_INVOICES_REQUEST" })
-              );
+            onProceed={(selectedIds, folderName) => {
+              void sendMessage({
+                type: "SELECT_ORDERS",
+                orderIds: selectedIds,
+                exportFolderName: folderName,
+              }).then(() => sendMessage({ type: "CAPTURE_INVOICES_REQUEST" }));
             }}
             onRescan={() => void sendMessage({ type: "SCAN_ORDERS_REQUEST" })}
           />
@@ -321,14 +323,20 @@ function IdleStep({ state, sendMessage }: IdleStepProps) {
 
 interface ReviewOrdersStepProps {
   state: ReturnType<typeof useAppState>["state"];
-  onProceed: (selectedIds: string[]) => void;
+  onProceed: (selectedIds: string[], folderName: string) => void;
   onRescan: () => void;
+}
+
+function todayISODate(): string {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
 
 function ReviewOrdersStep({ state, onProceed, onRescan }: ReviewOrdersStepProps) {
   const [selectedIds, setSelectedIds] = useState<string[]>(() =>
     state.orders.map((o) => o.orderId)
   );
+  const [folderName, setFolderName] = useState(state.exportFolderName ?? todayISODate());
 
   const toggleOrder = (orderId: string) => {
     setSelectedIds((prev) =>
@@ -387,9 +395,24 @@ function ReviewOrdersStep({ state, onProceed, onRescan }: ReviewOrdersStepProps)
         </div>
       )}
 
-      <div className="p-3 border-t border-gray-100">
+      <div className="p-3 border-t border-gray-100 space-y-2">
+        <div className="space-y-1">
+          <label className="text-xs font-medium text-gray-600">
+            Export folder name
+          </label>
+          <input
+            type="text"
+            value={folderName}
+            onChange={(e) => setFolderName(e.target.value.trim())}
+            placeholder={todayISODate()}
+            className="w-full border border-gray-300 rounded-lg px-3 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-blue-500"
+          />
+          <div className="text-xs text-gray-400">
+            Saved to Downloads/{folderName || todayISODate()}/
+          </div>
+        </div>
         <button
-          onClick={() => onProceed(selectedIds)}
+          onClick={() => onProceed(selectedIds, folderName || todayISODate())}
           disabled={selectedIds.length === 0}
           className="w-full py-2.5 px-4 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 disabled:opacity-50 transition-colors"
         >

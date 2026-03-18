@@ -8,26 +8,38 @@ import { logger } from "@/lib/logger";
 import { fillClaimForm } from "./form-filler";
 import { observeNavigation } from "./form-observer";
 
-logger.log("Navia content script loaded on:", window.location.href);
+// Guard against double-initialization when the SW re-injects this script
+// into a tab that already has it running.
+if ((window as Record<string, unknown>)["__fsaNaviaLoaded"]) {
+  console.log("[FSA:navia] Already loaded, skipping re-init");
+} else {
+  (window as Record<string, unknown>)["__fsaNaviaLoaded"] = true;
+  init();
+}
 
-// ── DOM discovery: log all form fields so we can identify real selectors ──────
+function init() {
+
+console.log("[FSA:navia] Content script loaded on:", window.location.href);
+
+// ── DOM discovery: always-on console logging to identify real selectors ───────
+// Uses console.log directly — logger.log is stripped in production builds.
 function discoverFormFields(): void {
   const inputs = Array.from(document.querySelectorAll("input, select, textarea, button"));
   if (inputs.length === 0) {
-    logger.log("[FSA:navia:discover] No form fields found yet (page may still be loading)");
+    console.log("[FSA:navia:discover] No form fields found yet (page may still be loading)");
     return;
   }
-  logger.log(`[FSA:navia:discover] Found ${inputs.length} interactive elements:`);
+  console.log(`[FSA:navia:discover] Found ${inputs.length} interactive elements on ${window.location.href}:`);
   inputs.forEach((el, i) => {
     const e = el as HTMLInputElement;
-    logger.log(
-      `  [${i}] <${el.tagName.toLowerCase()}> ` +
-      `type=${e.type ?? "—"} ` +
-      `name="${e.name ?? ""}" ` +
-      `id="${e.id ?? ""}" ` +
-      `placeholder="${e.placeholder ?? ""}" ` +
-      `class="${el.className.slice(0, 60)}"` +
-      (el.tagName === "BUTTON" ? ` text="${el.textContent?.trim().slice(0, 40)}"` : "")
+    console.log(
+      `  [${i}] <${el.tagName.toLowerCase()}>`,
+      `type=${e.type ?? "—"}`,
+      `name="${e.name ?? ""}"`,
+      `id="${e.id ?? ""}"`,
+      `placeholder="${e.placeholder ?? ""}"`,
+      el.tagName === "BUTTON" ? `text="${el.textContent?.trim().slice(0, 60)}"` : "",
+      `class="${el.className.slice(0, 80)}"`
     );
   });
 }
@@ -37,7 +49,7 @@ setTimeout(discoverFormFields, 1500);
 
 // Observe SPA navigation so we can re-attach listeners after page transitions
 observeNavigation((url) => {
-  logger.log("Navia SPA navigated to:", url);
+  console.log("[FSA:navia] SPA navigated to:", url);
   setTimeout(discoverFormFields, 1500);
 });
 
@@ -57,7 +69,7 @@ async function handleMessage(message: SWToNaviaMessage): Promise<unknown> {
       const { claim } = message;
 
       // Always dump DOM at fill time so we see current form state
-      logger.log("[FSA:navia:discover] === DOM at fill time ===");
+      console.log("[FSA:navia:discover] === DOM at fill time ===");
       discoverFormFields();
 
       try {
@@ -96,3 +108,5 @@ async function handleMessage(message: SWToNaviaMessage): Promise<unknown> {
       return { error: "Unknown message" };
   }
 }
+
+} // end init()

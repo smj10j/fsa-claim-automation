@@ -6,7 +6,7 @@ import type { AppState, WorkflowStep } from "./state";
 export type PopupToSWMessage =
   | { type: "START_WORKFLOW"; benefitYear?: number }
   | { type: "SCAN_ORDERS_REQUEST" }
-  | { type: "SELECT_ORDERS"; orderIds: string[] }
+  | { type: "SELECT_ORDERS"; orderIds: string[]; exportFolderName?: string }
   | { type: "CAPTURE_INVOICES_REQUEST" }
   | { type: "NAVIGATE_NAVIA" }
   | { type: "BEGIN_SUBMITTING" }

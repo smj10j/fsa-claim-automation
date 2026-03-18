@@ -1,56 +1,29 @@
 /**
  * Navia Benefits portal DOM selectors for claim submission form.
- *
- * IMPORTANT: These selectors need to be verified against the live Navia portal.
- * Update during Phase 4 implementation after manual DOM inspection.
- *
- * Last verified: TBD (not yet inspected)
- * @see https://app.naviabenefits.com
+ * Last verified: 2026-03-18 against live portal at app.naviabenefits.com/#/claimSub
  */
 
 export const NAVIA_SELECTORS = {
-  // Navigation to claim submission
-  submitClaimLink: [
-    "a[href*='submit-claim']",
-    "a[href*='submitclaim']",
-  ],
+  // ── Main claim page (#/claimSub) ──────────────────────────────────────────
+  addItemButton: "#claim-add-item-btn",
+  agreeToTerms: "input[name='agreeToTerms']",
+  submitClaimButton: "#claim-submit-btn",
 
-  // Claim submission form fields
-  // NOTE: These are placeholders - update after inspecting actual Navia form
-  form: {
-    expenseType: [
-      "select[name*='expenseType']",
-      "select[id*='expense-type']",
-      "select[name*='expense_type']",
-    ],
-    serviceDate: [
-      "input[name*='serviceDate']",
-      "input[id*='service-date']",
-      "input[type='date'][name*='date']",
-    ],
-    amount: [
-      "input[name*='amount']",
-      "input[id*='amount']",
-      "input[type='number'][name*='amount']",
-    ],
-    description: [
-      "textarea[name*='description']",
-      "input[name*='description']",
-      "textarea[id*='description']",
-    ],
-    patientName: [
-      "select[name*='patient']",
-      "input[name*='patient']",
-      "select[id*='patient']",
-    ],
-    fileUpload: [
-      "input[type='file']",
-      "input[name*='receipt']",
-      "input[name*='attachment']",
-    ],
-    submitButton: [
-      "button[type='submit']",
-      "input[type='submit']",
-    ],
-  },
+  // ── Wizard step 1: Document upload ────────────────────────────────────────
+  fileUpload: "#fileDropRef",
+
+  // ── Wizard navigation buttons ─────────────────────────────────────────────
+  wizardNext: "#modal-wizard-next-btn",       // "next" / "add another claim"
+  wizardConfirm: "#modal-wizard-confirm-btn", // "I'm finished"
+  wizardBack: "#modal-wizard-back-btn",
+  wizardCancel: "#modal-wizard-cancel-btn",
+
+  // ── Wizard step 2: Claim detail fields ────────────────────────────────────
+  benefitSelect: "select.zoom-select",
+  serviceStartDate: "#fromDate",
+  serviceEndDate: "#toDate",
+  providerName: "#providerName",
+  forWhom: "#forWhom",
+  amount: "input[placeholder='Amount']",
+  comments: "#claimComment",
 } as const;

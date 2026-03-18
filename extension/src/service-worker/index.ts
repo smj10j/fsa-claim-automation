@@ -26,6 +26,7 @@ import { checkEligibility, getNaviaExpenseType } from "@/lib/eligibility";
 import { sendToTab } from "@/lib/messaging";
 import { logger } from "@/lib/logger";
 import { openAmazonOrderHistory, openNaviaPortal, navigateTab } from "./tab-coordinator";
+import { downloadClaimPackage, defaultExportFolderName } from "@/lib/claim-export";
 
 // Always-on logger for the service worker console
 const SW = {
@@ -112,6 +113,7 @@ async function handleMessage(
     case "SELECT_ORDERS": {
       await updateAppState({
         selectedOrderIds: message.orderIds,
+        exportFolderName: message.exportFolderName,
         currentStep: "capturing_invoices",
       });
       return { ok: true };
@@ -160,6 +162,9 @@ async function handleMessage(
         return { error: "No Navia tab found. Please open Navia Benefits and navigate to the Submit Claim page." };
       }
       naviaTabId = naviaTab;
+      // Ensure the content script is running — it may not be if the tab was
+      // open before the extension was loaded/reloaded.
+      await ensureNaviaContentScript(naviaTabId);
       await sendToTab(naviaTabId, { type: "FILL_CLAIM", claim });
       return { ok: true };
     }
@@ -227,6 +232,15 @@ async function handleMessage(
         const claims = await buildClaimsFromOrders(selectedOrders);
         SW.log(`Built ${claims.length} claims from ${selectedOrders.length} orders`);
         await updateAppState({ orders, claims, currentStep: "navigate_navia" });
+
+        // Download claim package to Downloads/<folderName>/
+        const folderName =
+          captureResultState.exportFolderName ?? defaultExportFolderName();
+        try {
+          await downloadClaimPackage(claims, captureResultState.benefitYear, folderName);
+        } catch (err) {
+          SW.error("Claim package download failed:", err);
+        }
       } else {
         await updateAppState({ orders, currentStep: "capturing_invoices" });
         // Navigate to the next pending invoice
@@ -350,6 +364,40 @@ async function buildClaimsFromOrders(orders: AmazonOrder[]): Promise<Claim[]> {
  * Navigates the Amazon tab to the printable invoice page for a given order.
  * invoice-capture.ts is injected on this URL and auto-captures on load.
  */
+/**
+ * Ensures the Navia content script is running in the given tab.
+ * Chrome doesn't re-inject content scripts into tabs that were open before
+ * the extension was loaded or reloaded, so we inject programmatically if needed.
+ */
+async function ensureNaviaContentScript(tabId: number): Promise<void> {
+  // Check if the content script is already running by reading the window flag
+  const [result] = await chrome.scripting.executeScript({
+    target: { tabId },
+    func: () => !!(window as Record<string, unknown>)["__fsaNaviaLoaded"],
+  });
+
+  if (result?.result) {
+    SW.log("Navia content script already running");
+    return;
+  }
+
+  // Not running — inject using the path from the built manifest
+  SW.log("Navia content script not found, injecting...");
+  const manifest = chrome.runtime.getManifest();
+  const cs = manifest.content_scripts?.find((c) =>
+    c.matches?.some((m) => m.includes("naviabenefits"))
+  );
+  const file = cs?.js?.[0];
+  if (!file) {
+    SW.error("Could not find Navia content script path in manifest");
+    return;
+  }
+  await chrome.scripting.executeScript({ target: { tabId }, files: [file] });
+  // Brief pause for the script to initialize before we send a message
+  await new Promise((r) => setTimeout(r, 300));
+  SW.log("Navia content script injected");
+}
+
 /**
  * Finds any open Navia Benefits tab by URL pattern.
  * More reliable than the in-memory naviaTabId which is lost on SW restarts.
