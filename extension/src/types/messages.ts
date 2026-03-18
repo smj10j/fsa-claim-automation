@@ -9,6 +9,7 @@ export type PopupToSWMessage =
   | { type: "SELECT_ORDERS"; orderIds: string[] }
   | { type: "CAPTURE_INVOICES_REQUEST" }
   | { type: "NAVIGATE_NAVIA" }
+  | { type: "BEGIN_SUBMITTING" }
   | { type: "FILL_CLAIM_REQUEST"; claimId: string }
   | { type: "SKIP_CLAIM"; claimId: string }
   | { type: "RESET_WORKFLOW" }

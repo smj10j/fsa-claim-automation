@@ -181,8 +181,14 @@ export default function App() {
               Open Navia Benefits
             </button>
             <div className="text-xs text-gray-400">
-              Please log in to Navia if prompted, then navigate to Submit Claim.
+              Log in to Navia, then navigate to the Submit Claim page.
             </div>
+            <button
+              onClick={() => void sendMessage({ type: "BEGIN_SUBMITTING" })}
+              className="w-full py-2 px-4 border border-blue-400 text-blue-600 rounded-lg text-sm font-medium hover:bg-blue-50 transition-colors"
+            >
+              I'm on the Submit Claim page →
+            </button>
           </div>
         )}
 

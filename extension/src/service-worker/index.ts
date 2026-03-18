@@ -25,7 +25,7 @@ import { getBenefitYear } from "@/lib/benefit-year";
 import { checkEligibility, getNaviaExpenseType } from "@/lib/eligibility";
 import { sendToTab } from "@/lib/messaging";
 import { logger } from "@/lib/logger";
-import { openAmazonOrderHistory, openNaviaPortal } from "./tab-coordinator";
+import { openAmazonOrderHistory, openNaviaPortal, navigateTab } from "./tab-coordinator";
 
 // Always-on logger for the service worker console
 const SW = {
@@ -116,20 +116,18 @@ async function handleMessage(
     case "CAPTURE_INVOICES_REQUEST": {
       await updateAppState({ currentStep: "capturing_invoices" });
       const captureState = await readAppState();
-      const selectedOrders = captureState.orders.filter((o) =>
-        captureState.selectedOrderIds.includes(o.orderId)
+      const firstPending = captureState.orders.find(
+        (o) =>
+          captureState.selectedOrderIds.includes(o.orderId) &&
+          o.invoiceStatus === "pending"
       );
-      // Trigger capture for each order sequentially
-      // Content scripts will send CAPTURE_INVOICE_RESULT back
-      for (const order of selectedOrders) {
+      if (firstPending) {
+        // Navigate to the Amazon print invoice URL.
+        // invoice-capture.ts auto-captures on load and sends CAPTURE_INVOICE_RESULT back.
         if (!amazonTabId) {
-          // Recover tab ID without navigating away (invoice capture needs the tab as-is)
           amazonTabId = await openAmazonOrderHistory(captureState.benefitYear?.year);
         }
-        await sendToTab(amazonTabId, {
-          type: "CAPTURE_INVOICE",
-          orderId: order.orderId,
-        });
+        await navigateToInvoice(amazonTabId, firstPending.orderId);
       }
       return { ok: true };
     }
@@ -137,6 +135,11 @@ async function handleMessage(
     case "NAVIGATE_NAVIA": {
       await updateAppState({ currentStep: "navigate_navia" });
       naviaTabId = await openNaviaPortal();
+      return { ok: true };
+    }
+
+    case "BEGIN_SUBMITTING": {
+      await updateAppState({ currentStep: "submitting_claims" });
       return { ok: true };
     }
 
@@ -218,6 +221,15 @@ async function handleMessage(
         await updateAppState({ orders, claims, currentStep: "navigate_navia" });
       } else {
         await updateAppState({ orders, currentStep: "capturing_invoices" });
+        // Navigate to the next pending invoice
+        const nextPending = orders.find(
+          (o) =>
+            captureResultState.selectedOrderIds.includes(o.orderId) &&
+            o.invoiceStatus === "pending"
+        );
+        if (nextPending && amazonTabId) {
+          await navigateToInvoice(amazonTabId, nextPending.orderId);
+        }
       }
       return { ok: true };
     }
@@ -324,4 +336,14 @@ async function buildClaimsFromOrders(orders: AmazonOrder[]): Promise<Claim[]> {
   }
 
   return claims;
+}
+
+/**
+ * Navigates the Amazon tab to the printable invoice page for a given order.
+ * invoice-capture.ts is injected on this URL and auto-captures on load.
+ */
+async function navigateToInvoice(tabId: number, orderId: string): Promise<void> {
+  const url = `https://www.amazon.com/gp/css/summary/print.html?orderID=${orderId}`;
+  SW.log(`Navigating to invoice: ${url}`);
+  await navigateTab(tabId, url);
 }
