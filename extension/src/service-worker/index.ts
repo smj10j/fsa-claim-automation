@@ -17,9 +17,12 @@ import {
   readAppState,
   updateAppState,
   writeInvoice,
+  readInvoice,
   clearAllData,
 } from "@/lib/storage";
 import { getBenefitYear } from "@/lib/benefit-year";
+import { checkEligibility, getNaviaExpenseType } from "@/lib/eligibility";
+import type { AmazonOrder, Claim, ClaimItem } from "@/types";
 import { sendToTab } from "@/lib/messaging";
 import { logger } from "@/lib/logger";
 import { openAmazonOrderHistory, openNaviaPortal } from "./tab-coordinator";
@@ -27,6 +30,58 @@ import { openAmazonOrderHistory, openNaviaPortal } from "./tab-coordinator";
 // Keep track of active tab IDs in memory (OK to lose on SW restart - recoverable)
 let amazonTabId: number | undefined;
 let naviaTabId: number | undefined;
+
+// ─────────────────────────────────────────────
+// Claim creation
+// ─────────────────────────────────────────────
+
+/**
+ * Creates Claim objects from captured orders + their stored invoices.
+ * Called once all invoices have been successfully captured.
+ */
+async function createClaimsFromOrders(orders: AmazonOrder[]): Promise<Claim[]> {
+  const claims: Claim[] = [];
+
+  for (const order of orders) {
+    const invoiceDataUrl = await readInvoice(order.orderId);
+    if (!invoiceDataUrl) {
+      logger.warn(`No invoice found for order ${order.orderId}, skipping claim creation`);
+      continue;
+    }
+
+    const items: ClaimItem[] = order.eligibleItems.map((item) => {
+      const eligibility = checkEligibility(item.title);
+      const expenseType = eligibility.category
+        ? getNaviaExpenseType(eligibility.category)
+        : "OTC";
+      return {
+        description: item.title,
+        serviceDate: order.orderDate,
+        amount: item.totalPrice,
+        expenseType,
+      };
+    });
+
+    if (items.length === 0) {
+      logger.warn(`Order ${order.orderId} has no eligible items, skipping claim creation`);
+      continue;
+    }
+
+    const totalAmount = items.reduce((sum, item) => sum + item.amount, 0);
+
+    claims.push({
+      id: `claim-${order.orderId}`,
+      sourceOrderId: order.orderId,
+      items,
+      totalAmount,
+      invoiceDataUrl,
+      status: "draft",
+      createdAt: new Date(),
+    });
+  }
+
+  return claims;
+}
 
 // ─────────────────────────────────────────────
 // Install / startup
@@ -188,14 +243,18 @@ async function handleMessage(
           ? { ...o, invoiceStatus: "captured" as const }
           : o
       );
-      const allCaptured = orders
-        .filter((o) => captureResultState.selectedOrderIds.includes(o.orderId))
-        .every((o) => o.invoiceStatus === "captured");
+      const selectedOrders = orders.filter((o) =>
+        captureResultState.selectedOrderIds.includes(o.orderId)
+      );
+      const allCaptured = selectedOrders.every((o) => o.invoiceStatus === "captured");
 
-      await updateAppState({
-        orders,
-        currentStep: allCaptured ? "navigate_navia" : "capturing_invoices",
-      });
+      if (allCaptured) {
+        const claims = await createClaimsFromOrders(selectedOrders);
+        logger.log(`Created ${claims.length} claims from ${selectedOrders.length} orders`);
+        await updateAppState({ orders, claims, currentStep: "navigate_navia" });
+      } else {
+        await updateAppState({ orders });
+      }
       return { ok: true };
     }
 
