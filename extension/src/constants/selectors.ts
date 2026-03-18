@@ -57,5 +57,11 @@ export const AMAZON_SELECTORS = {
     itemTitle: ".a-link-normal",
     // Order date
     orderDate: [".a-size-base .a-text-bold", ".a-size-medium"],
+    /**
+     * Text to search for when looking for Amazon's FSA label on the invoice page.
+     * Amazon prints "FSA or HSA eligible:  $XX.XX" in the order totals section.
+     * No stable CSS class/ID exists — we use a TreeWalker text search.
+     */
+    fsaLabelText: "FSA or HSA eligible",
   },
 } as const;

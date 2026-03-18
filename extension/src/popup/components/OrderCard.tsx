@@ -64,7 +64,7 @@ export function OrderCard({ order, selected, onToggle }: Props) {
               {formatDate(order.orderDate)} · #{order.orderId}
             </div>
             <div className="font-medium text-xs mt-0.5 truncate">
-              {order.eligibleItems[0]?.title ?? "Unknown item"}
+              {order.eligibleItems[0]?.title ?? (order.items[0]?.title ?? "Unknown item")}
               {order.eligibleItems.length > 1 && (
                 <span className="text-gray-400">
                   {" "}+{order.eligibleItems.length - 1} more
@@ -87,22 +87,27 @@ export function OrderCard({ order, selected, onToggle }: Props) {
         </div>
         <div className="flex-shrink-0 text-right">
           <div className="font-semibold text-sm font-mono">
-            {formatCents(order.totalAmount)}
+            {formatCents(order.fsaEligibleAmount ?? order.totalAmount)}
           </div>
+          {order.fsaEligibleAmount != null && order.fsaEligibleAmount !== order.totalAmount && (
+            <div className="text-[10px] text-gray-400 line-through">
+              {formatCents(order.totalAmount)}
+            </div>
+          )}
           <div
             className={`text-[10px] px-1.5 py-0.5 rounded-full mt-1 ${
-              order.invoiceStatus === "captured"
+              order.invoiceScanStatus === "confirmed"
                 ? "bg-green-100 text-green-700"
-                : order.invoiceStatus === "failed"
-                ? "bg-red-100 text-red-700"
-                : "bg-gray-100 text-gray-500"
+                : order.invoiceScanStatus === "no_label"
+                ? "bg-gray-100 text-gray-500"
+                : "bg-gray-100 text-gray-400"
             }`}
           >
-            {order.invoiceStatus === "captured"
-              ? "Receipt ✓"
-              : order.invoiceStatus === "failed"
-              ? "Capture failed"
-              : "No receipt"}
+            {order.invoiceScanStatus === "confirmed"
+              ? "Amazon FSA ✓"
+              : order.invoiceScanStatus === "no_label"
+              ? "No FSA label"
+              : "Pending scan"}
           </div>
         </div>
       </div>

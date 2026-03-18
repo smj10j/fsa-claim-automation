@@ -69,6 +69,48 @@
 - [ ] End-to-end test: Amazon scan → invoice capture → Navia submission
 - [ ] Production build and Chrome Web Store prep
 
+## Current Sprint: PRD-011 — Invoice-First FSA Detection
+
+**Goal**: Use Amazon's native "FSA or HSA eligible: $X.XX" label on invoice pages as the primary eligibility signal. Scan every benefit-year order's invoice automatically, capture screenshots in the same visit, and remove the separate "Capture Invoices" step.
+
+### Phase 1 — Types & Messages ✅
+- [x] `types/order.ts`: Add `invoiceScanStatus`, `fsaEligibleAmount`, `eligibilitySource` to `AmazonOrder`
+- [x] `types/state.ts`: Add `"scanning_invoices"` to `WorkflowStep`; add `invoiceScanProgress` to `AppState`
+- [x] `types/messages.ts`: Add `INVOICE_SCAN_RESULT` and `INVOICE_SCAN_ERROR` to `AmazonToSWMessage`
+
+### Phase 2 — Selectors & Label Extraction ✅
+- [x] `constants/selectors.ts`: Add `fsaLabelText` to `orderDetail`
+- [x] `content-scripts/amazon/fsa-label.ts`: `extractFsaEligibleAmount()` + `parseDollarAmountToCents()` as pure testable module
+- [x] `invoice-capture.ts`: Handle `scanning_invoices` step — extract amount + capture screenshot + send `INVOICE_SCAN_RESULT`
+
+### Phase 3 — Order History Scan Changes ✅
+- [x] `content-scripts/amazon/order-scanner.ts`: Remove `eligibleItems.length === 0` guard — emit ALL orders in benefit year
+- [x] Keep `filterEligibleItems` call for metadata, but do not gate order inclusion on its result
+
+### Phase 4 — Service Worker ✅
+- [x] `service-worker/index.ts`: On `SCAN_ORDERS_RESULT` (hasNextPage=false) → transition to `scanning_invoices`, kick off first invoice navigation
+- [x] Handle `INVOICE_SCAN_RESULT`: update order status, save invoice if label found, advance to next pending
+- [x] Handle `INVOICE_SCAN_ERROR`: mark order as `no_label`, advance to next
+- [x] After all orders scanned → transition to `reviewing_orders`
+- [x] `buildClaimsFromOrders`: use `fsaEligibleAmount` when set, else fall back to `totalAmount`
+- [x] Update `invoiceScanProgress` in state after each invoice
+- [x] `SELECT_ORDERS`: detect new flow, build claims + go to `navigate_navia` directly (skip legacy capturing_invoices)
+
+### Phase 5 — Popup UI ✅
+- [x] Add `scanning_invoices` step to workflow progress indicator (StepIndicator.tsx)
+- [x] Show progress bar: "Scanning invoices: N / M..."
+- [x] `OrderCard.tsx`: show `fsaEligibleAmount` (not `totalAmount`) when available; strikethrough original total
+- [x] `OrderCard.tsx`: show `invoiceScanStatus` badge ("Amazon FSA ✓" / "No FSA label" / "Pending scan")
+- [x] Remove "Capture Invoices" button — replaced with "Proceed to Submit"
+- [x] Review step header shows "N FSA-confirmed / M orders"
+
+### Phase 6 — Tests & Validation ✅
+- [x] Unit tests: `extractFsaEligibleAmount()` — 10 cases including all 4 extraction strategies
+- [x] Unit tests: `parseDollarAmountToCents()` — 7 cases covering edge cases
+- [x] Build passes: `npm run build` — 53 tests pass
+- [ ] End-to-end: run full flow in Chrome — history scan → invoice scan → review → Navia submit
+- [ ] Verify FSA amount on claim matches Amazon's label amount
+
 ## Backlog
 - [ ] Support multiple FSA providers beyond Navia
 - [ ] Support additional retailers beyond Amazon

@@ -31,7 +31,14 @@ export type AmazonToSWMessage =
   | { type: "SCAN_ORDERS_RESULT"; orders: AmazonOrder[]; hasNextPage: boolean }
   | { type: "SCAN_ORDERS_ERROR"; message: string }
   | { type: "CAPTURE_INVOICE_RESULT"; orderId: string; dataUrl: string }
-  | { type: "CAPTURE_INVOICE_ERROR"; orderId: string; message: string };
+  | { type: "CAPTURE_INVOICE_ERROR"; orderId: string; message: string }
+  /**
+   * Result of visiting an order's invoice page during scanning_invoices.
+   * fsaEligibleAmountCents: null means "FSA or HSA eligible" label not found.
+   * dataUrl: null means screenshot capture failed (independent of label presence).
+   */
+  | { type: "INVOICE_SCAN_RESULT"; orderId: string; fsaEligibleAmountCents: number | null; dataUrl: string | null }
+  | { type: "INVOICE_SCAN_ERROR"; orderId: string; message: string };
 
 // Service Worker → Navia Content Script
 export type SWToNaviaMessage = { type: "FILL_CLAIM"; claim: Claim };

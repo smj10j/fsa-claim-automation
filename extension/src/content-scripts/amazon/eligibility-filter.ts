@@ -3,7 +3,7 @@ import type { OrderItem } from "@/types";
 
 /**
  * Applies FSA eligibility checking to a list of order items.
- * Returns the items with isEligible and eligibilityReason set.
+ * Returns items with isEligible, eligibilityReason, and naviaExpense set.
  */
 export function filterEligibleItems(items: OrderItem[]): {
   allItems: OrderItem[];
@@ -15,6 +15,7 @@ export function filterEligibleItems(items: OrderItem[]): {
       ...item,
       isEligible: result.isEligible,
       eligibilityReason: result.reason,
+      naviaExpense: result.naviaExpense,
     };
   });
 

@@ -2,8 +2,8 @@ import type { WorkflowStep } from "@/types";
 
 const STEPS: { id: WorkflowStep; label: string }[] = [
   { id: "scanning_amazon", label: "Scan" },
+  { id: "scanning_invoices", label: "Invoices" },
   { id: "reviewing_orders", label: "Review" },
-  { id: "capturing_invoices", label: "Invoices" },
   { id: "submitting_claims", label: "Submit" },
   { id: "complete", label: "Done" },
 ];
@@ -12,8 +12,8 @@ const STEP_ORDER: WorkflowStep[] = [
   "idle",
   "navigate_amazon",
   "scanning_amazon",
+  "scanning_invoices",
   "reviewing_orders",
-  "capturing_invoices",
   "navigate_navia",
   "submitting_claims",
   "complete",
@@ -36,7 +36,8 @@ export function StepIndicator({ currentStep }: Props) {
         const stepIndex = getStepIndex(step.id);
         const isDone = currentIndex > stepIndex;
         const isActive = currentIndex === stepIndex ||
-          (step.id === "scanning_amazon" && currentStep === "navigate_amazon");
+          (step.id === "scanning_amazon" && currentStep === "navigate_amazon") ||
+          (step.id === "scanning_invoices" && currentStep === "scanning_invoices");
 
         return (
           <div key={step.id} className="flex flex-col items-center gap-1">

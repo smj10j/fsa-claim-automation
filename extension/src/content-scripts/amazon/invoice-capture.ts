@@ -2,6 +2,9 @@ import type { AppState } from "@/types";
 import { AMAZON_SELECTORS } from "@/constants/selectors";
 import { captureElement } from "@/lib/screenshot";
 import { logger } from "@/lib/logger";
+import { extractFsaEligibleAmount } from "./fsa-label";
+
+// ── Screenshot capture ────────────────────────────────────────────────────────
 
 /**
  * Captures a screenshot of the current page's order receipt.
@@ -9,7 +12,6 @@ import { logger } from "@/lib/logger";
  * Returns a base64 JPEG data URL.
  */
 export async function captureOrderReceipt(): Promise<string> {
-  // Try known receipt container selectors first
   let receiptEl: Element | null = null;
   for (const sel of AMAZON_SELECTORS.orderDetail.receiptContainer) {
     receiptEl = document.querySelector(sel);
@@ -20,22 +22,16 @@ export async function captureOrderReceipt(): Promise<string> {
   }
 
   if (!receiptEl) {
-    // Print invoice page has no special container — capture full body
     receiptEl = document.querySelector("main") ?? document.body;
     logger.warn("Using fallback receipt container:", receiptEl?.tagName);
   }
 
   const dataUrl = await captureElement(receiptEl as HTMLElement);
-  logger.log(
-    "Invoice captured, size:",
-    Math.round((dataUrl.length * 0.75) / 1024),
-    "KB"
-  );
+  logger.log("Invoice captured, size:", Math.round((dataUrl.length * 0.75) / 1024), "KB");
   return dataUrl;
 }
 
-// ── Auto-capture on load ──────────────────────────────────────────────────────
-// When the SW navigates to the print invoice page, this fires automatically.
+// ── Auto-run on page load ──────────────────────────────────────────────────────
 
 function extractOrderIdFromUrl(url: string): string | null {
   const match = /[?&]orderID=([\d-]+)/i.exec(url);
@@ -50,24 +46,50 @@ if (orderId) {
     const state = result["appState"] as AppState | undefined;
     logger.log("[FSA:invoice] currentStep:", state?.currentStep);
 
-    if (state?.currentStep !== "capturing_invoices") return;
+    if (state?.currentStep === "scanning_invoices") {
+      // New flow: extract FSA label + capture screenshot in one visit
+      logger.log("[FSA:invoice] scanning_invoices — extracting FSA label for order:", orderId);
 
-    logger.log("[FSA:invoice] Auto-capturing receipt for order:", orderId);
-    void captureOrderReceipt()
-      .then((dataUrl) =>
-        chrome.runtime.sendMessage({
-          type: "CAPTURE_INVOICE_RESULT",
-          orderId,
-          dataUrl,
+      const fsaEligibleAmountCents = extractFsaEligibleAmount();
+      logger.log("[FSA:invoice] FSA eligible amount (cents):", fsaEligibleAmountCents);
+
+      // Capture screenshot regardless of whether label was found
+      // (we store it only if label was found, but capture anyway for logging)
+      void captureOrderReceipt()
+        .then((dataUrl) => {
+          chrome.runtime.sendMessage({
+            type: "INVOICE_SCAN_RESULT",
+            orderId,
+            fsaEligibleAmountCents,
+            dataUrl: fsaEligibleAmountCents !== null ? dataUrl : null,
+          });
         })
-      )
-      .catch((err) => {
-        logger.error("[FSA:invoice] Capture failed:", err);
-        void chrome.runtime.sendMessage({
-          type: "CAPTURE_INVOICE_ERROR",
-          orderId,
-          message: String(err),
+        .catch((err) => {
+          logger.error("[FSA:invoice] Screenshot capture failed:", err);
+          // Still report the FSA amount even if screenshot failed
+          chrome.runtime.sendMessage({
+            type: "INVOICE_SCAN_RESULT",
+            orderId,
+            fsaEligibleAmountCents,
+            dataUrl: null,
+          });
         });
-      });
+
+    } else if (state?.currentStep === "capturing_invoices") {
+      // Legacy flow fallback
+      logger.log("[FSA:invoice] capturing_invoices (legacy) — capturing receipt for order:", orderId);
+      void captureOrderReceipt()
+        .then((dataUrl) =>
+          chrome.runtime.sendMessage({ type: "CAPTURE_INVOICE_RESULT", orderId, dataUrl })
+        )
+        .catch((err) => {
+          logger.error("[FSA:invoice] Capture failed:", err);
+          void chrome.runtime.sendMessage({
+            type: "CAPTURE_INVOICE_ERROR",
+            orderId,
+            message: String(err),
+          });
+        });
+    }
   });
 }

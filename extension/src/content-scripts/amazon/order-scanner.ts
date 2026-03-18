@@ -103,19 +103,27 @@ function parseOrderElement(orderEl: Element, benefitYear: BenefitYear): AmazonOr
   D.log(`[${orderId}] found ${rawItems.length} items:`, rawItems.map(i => i.title));
 
   const { allItems, eligibleItems } = filterEligibleItems(rawItems);
-  D.log(`[${orderId}] eligible items (${eligibleItems.length}):`, eligibleItems.map(i => `${i.title} [${i.eligibilityReason}]`));
+  D.log(`[${orderId}] keyword-eligible items (${eligibleItems.length}):`, eligibleItems.map(i => `${i.title} [${i.eligibilityReason}]`));
 
-  if (eligibleItems.length === 0) {
-    D.log(`[${orderId}] SKIP: no eligible items`);
-    return null;
-  }
+  // Include ALL orders in the benefit year — invoice scanning will determine
+  // final FSA eligibility via Amazon's own "FSA or HSA eligible: $X.XX" label.
+  // Keyword matching is kept as metadata (eligibleItems) but is not a filter gate.
 
   const totalText = getMetaByLabel(orderEl, "Total");
   const totalAmount = parsePriceToCents(totalText);
   const detailsLink = querySelector(orderEl, AMAZON_SELECTORS.orderHistory.orderDetailsLink);
   const orderDetailUrl = detailsLink ? `https://www.amazon.com${detailsLink.getAttribute("href") ?? ""}` : "";
 
-  return { orderId, orderDate, totalAmount, items: allItems, eligibleItems, invoiceStatus: "pending", orderDetailUrl };
+  return {
+    orderId,
+    orderDate,
+    totalAmount,
+    items: allItems,
+    eligibleItems,
+    invoiceStatus: "pending",
+    invoiceScanStatus: "pending",
+    orderDetailUrl,
+  };
 }
 
 export function scanCurrentPage(benefitYear?: BenefitYear): { orders: AmazonOrder[]; hasNextPage: boolean } {
@@ -143,9 +151,10 @@ export function scanCurrentPage(benefitYear?: BenefitYear): { orders: AmazonOrde
 
   // ── Per-page summary ─────────────────────────────────────────────────────
   D.log(`━━━ PAGE SUMMARY ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`);
-  D.log(`  Orders on page:   ${orderEls.length}`);
-  D.log(`  FSA eligible:     ${orders.length}`);
-  D.log(`  Has next page:    ${!!nextPageEl}`);
+  D.log(`  Orders on page:          ${orderEls.length}`);
+  D.log(`  In benefit year:         ${orders.length}`);
+  D.log(`  Keyword-eligible hints:  ${orders.filter(o => o.eligibleItems.length > 0).length}`);
+  D.log(`  Has next page:           ${!!nextPageEl}`);
   if (orders.length > 0) {
     D.log(`  ── Eligible orders ──`);
     for (const order of orders) {

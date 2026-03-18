@@ -91,13 +91,13 @@ export default function App() {
           <IdleStep state={state} sendMessage={sendMessage} />
         )}
 
-        {/* SCANNING */}
+        {/* SCANNING ORDERS */}
         {(currentStep === "navigate_amazon" || currentStep === "scanning_amazon") && (
           <div className="p-4 space-y-3">
             <div className="text-sm font-medium">Scanning Amazon orders...</div>
             <div className="text-xs text-gray-500">
-              Found {state.orders.length} eligible order
-              {state.orders.length !== 1 ? "s" : ""} so far
+              Found {state.orders.length} order
+              {state.orders.length !== 1 ? "s" : ""} in benefit year so far
             </div>
             <div className="flex items-center gap-2">
               <div className="flex-1 h-1.5 bg-gray-100 rounded-full overflow-hidden">
@@ -114,6 +114,38 @@ export default function App() {
           </div>
         )}
 
+        {/* SCANNING INVOICES */}
+        {currentStep === "scanning_invoices" && (
+          <div className="p-4 space-y-3">
+            <div className="text-sm font-medium">Scanning invoices for FSA label...</div>
+            <div className="text-xs text-gray-500">
+              {state.invoiceScanProgress
+                ? `${state.invoiceScanProgress.scanned} / ${state.invoiceScanProgress.total} invoices checked`
+                : "Starting invoice scan..."}
+            </div>
+            <div className="flex items-center gap-2">
+              <div className="flex-1 h-1.5 bg-gray-100 rounded-full overflow-hidden">
+                <div
+                  className="h-full bg-blue-600 rounded-full transition-all"
+                  style={{
+                    width: state.invoiceScanProgress && state.invoiceScanProgress.total > 0
+                      ? `${Math.round((state.invoiceScanProgress.scanned / state.invoiceScanProgress.total) * 100)}%`
+                      : "5%",
+                  }}
+                />
+              </div>
+              <span className="text-xs text-gray-400">
+                {state.invoiceScanProgress && state.invoiceScanProgress.total > 0
+                  ? `${Math.round((state.invoiceScanProgress.scanned / state.invoiceScanProgress.total) * 100)}%`
+                  : "..."}
+              </span>
+            </div>
+            <div className="text-xs text-gray-400">
+              Opening each invoice to detect the "FSA or HSA eligible" label. Do not close the Amazon tab.
+            </div>
+          </div>
+        )}
+
         {/* REVIEW ORDERS */}
         {currentStep === "reviewing_orders" && (
           <ReviewOrdersStep
@@ -123,42 +155,10 @@ export default function App() {
                 type: "SELECT_ORDERS",
                 orderIds: selectedIds,
                 exportFolderName: folderName,
-              }).then(() => sendMessage({ type: "CAPTURE_INVOICES_REQUEST" }));
+              });
             }}
             onRescan={() => void sendMessage({ type: "SCAN_ORDERS_REQUEST" })}
           />
-        )}
-
-        {/* CAPTURING INVOICES */}
-        {currentStep === "capturing_invoices" && (
-          <div className="p-4 space-y-2">
-            <div className="text-sm font-medium">Capturing receipts...</div>
-            {state.orders
-              .filter((o) => state.selectedOrderIds.includes(o.orderId))
-              .map((order) => (
-                <div
-                  key={order.orderId}
-                  className="flex items-center gap-2 text-xs py-1"
-                >
-                  <span className="w-4 flex-shrink-0">
-                    {order.invoiceStatus === "captured"
-                      ? "✓"
-                      : order.invoiceStatus === "failed"
-                      ? "✗"
-                      : "⟳"}
-                  </span>
-                  <span
-                    className={`truncate ${
-                      order.invoiceStatus === "failed"
-                        ? "text-red-500"
-                        : "text-gray-600"
-                    }`}
-                  >
-                    {order.eligibleItems[0]?.title ?? order.orderId}
-                  </span>
-                </div>
-              ))}
-          </div>
         )}
 
         {/* NAVIGATE NAVIA */}
@@ -350,7 +350,7 @@ function ReviewOrdersStep({ state, onProceed, onRescan }: ReviewOrdersStepProps)
     selectedIds.includes(o.orderId)
   );
   const totalEligible = selectedOrders.reduce(
-    (sum: number, o: AmazonOrder) => sum + o.totalAmount,
+    (sum: number, o: AmazonOrder) => sum + (o.fsaEligibleAmount ?? o.totalAmount),
     0
   );
 
@@ -359,8 +359,8 @@ function ReviewOrdersStep({ state, onProceed, onRescan }: ReviewOrdersStepProps)
       <div className="px-4 py-2 border-b border-gray-100 flex items-center justify-between">
         <div>
           <div className="text-xs font-semibold text-gray-700">
-            {state.orders.length} eligible order
-            {state.orders.length !== 1 ? "s" : ""} found
+            {state.orders.filter((o) => o.invoiceScanStatus === "confirmed").length} FSA-confirmed
+            {" / "}{state.orders.length} order{state.orders.length !== 1 ? "s" : ""}
           </div>
           <div className="text-xs text-gray-500">
             Selected total: {formatCents(totalEligible)}
@@ -416,7 +416,7 @@ function ReviewOrdersStep({ state, onProceed, onRescan }: ReviewOrdersStepProps)
           disabled={selectedIds.length === 0}
           className="w-full py-2.5 px-4 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 disabled:opacity-50 transition-colors"
         >
-          Capture Receipts ({selectedIds.length})
+          Proceed to Submit ({selectedIds.length})
         </button>
       </div>
     </div>

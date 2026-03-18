@@ -1,25 +1,25 @@
-import { ELIGIBILITY_RULES } from "@/constants/eligibility-list";
-import type { EligibilityResult, FSACategory } from "@/types";
+import { NAVIA_EXPENSES } from "@/constants/eligibility-list";
+import type { EligibilityResult, NaviaExpense } from "@/types";
 
 /**
  * Determines FSA eligibility for a product based on its title.
+ * Matches against the Navia Benefits official Health Care FSA expense list.
  *
- * Uses keyword matching against the ELIGIBILITY_RULES list.
- * Conservative approach: only flag items we're confident are eligible.
- *
- * @param productTitle - The product title from Amazon
- * @returns EligibilityResult with isEligible, category, and reason
+ * Returns isEligible=true for "covered", "lmn", and "prescription" statuses.
+ * The naviaExpense field tells you which category matched and what docs are needed.
  */
 export function checkEligibility(productTitle: string): EligibilityResult {
   const normalized = productTitle.toLowerCase().trim();
 
-  for (const rule of ELIGIBILITY_RULES) {
-    for (const keyword of rule.keywords) {
+  for (const expense of NAVIA_EXPENSES) {
+    for (const keyword of expense.keywords) {
       if (normalized.includes(keyword.toLowerCase())) {
+        const isEligible = expense.status !== "not-covered";
         return {
-          isEligible: true,
-          category: rule.category,
-          reason: `Matched keyword: "${keyword}" (${rule.label})`,
+          isEligible,
+          naviaExpense: expense,
+          matchedKeyword: keyword,
+          reason: `Matched "${keyword}" → ${expense.name} (${expense.status})`,
         };
       }
     }
@@ -29,25 +29,9 @@ export function checkEligibility(productTitle: string): EligibilityResult {
 }
 
 /**
- * Gets the display label for an FSA category.
+ * Returns the Navia expense name for use in claim exports and form filling.
+ * Falls back to "OTC" if no expense is matched.
  */
-export function getCategoryLabel(category: FSACategory): string {
-  const rule = ELIGIBILITY_RULES.find((r) => r.category === category);
-  return rule?.label ?? category;
-}
-
-/**
- * Gets the Navia expense type value for a given FSA category.
- */
-export function getNaviaExpenseType(category: FSACategory): string {
-  const EXPENSE_TYPE_MAP: Record<FSACategory, string> = {
-    otc_medicine: "OTC",
-    first_aid: "OTC",
-    medical_equipment: "Medical Equipment",
-    vision: "Vision",
-    dental: "Dental",
-    feminine_hygiene: "OTC",
-    baby_health: "Medical Equipment",
-  };
-  return EXPENSE_TYPE_MAP[category] ?? "OTC";
+export function getNaviaExpenseType(naviaExpense: NaviaExpense | undefined): string {
+  return naviaExpense?.name ?? "OTC";
 }
