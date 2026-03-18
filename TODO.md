@@ -76,3 +76,24 @@
 - [ ] Reminder alarms for approaching FSA deadline
 - [ ] Export claims to CSV/PDF
 - [ ] Settings page (benefit year override, provider selection)
+
+---
+
+## PRD Roadmap
+
+Detailed feature PRDs live in [`docs/prds/`](./docs/prds/):
+
+| ID | Feature | Status | Priority |
+|----|---------|--------|----------|
+| [PRD-001](docs/prds/PRD-001.md) | Amazon Order Scanner | `draft` | P0 |
+| [PRD-002](docs/prds/PRD-002.md) | Invoice Capture & Management | `draft` | P0 |
+| [PRD-003](docs/prds/PRD-003.md) | Navia Benefits Form Auto-Fill | `draft` | P0 |
+| [PRD-004](docs/prds/PRD-004.md) | Smart Eligibility Engine v2 | `draft` | P1 |
+| [PRD-005](docs/prds/PRD-005.md) | FSA Budget Dashboard & Year-End Alerts | `draft` | P1 |
+| [PRD-006](docs/prds/PRD-006.md) | Claim History & Status Monitor | `draft` | P1 |
+| [PRD-007](docs/prds/PRD-007.md) | Multi-Provider Support | `draft` | P2 |
+| [PRD-008](docs/prds/PRD-008.md) | Multi-Retailer Support | `draft` | P2 |
+| [PRD-009](docs/prds/PRD-009.md) | Onboarding & Guided Setup Wizard | `draft` | P1 |
+| [PRD-010](docs/prds/PRD-010.md) | Export, Reporting & Tax Documentation | `draft` | P2 |
+
+See [`docs/prds/REGISTRY.md`](docs/prds/REGISTRY.md) for full status tracking.
