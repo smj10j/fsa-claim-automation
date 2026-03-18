@@ -36,6 +36,14 @@ chrome.runtime.onInstalled.addListener(() => {
   logger.log("Extension installed/updated");
 });
 
+// Disable navigation preload — we don't use it and it causes console spam
+self.addEventListener("activate", (event) => {
+  (event as ExtendableEvent).waitUntil(
+    (self as unknown as ServiceWorkerGlobalScope).registration.navigationPreload
+      ?.disable() ?? Promise.resolve()
+  );
+});
+
 // ─────────────────────────────────────────────
 // Message Router
 // ─────────────────────────────────────────────
